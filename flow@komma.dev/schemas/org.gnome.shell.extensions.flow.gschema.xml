@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.flow" path="/org/gnome/shell/extensions/flow/">
+    <key name="widget-enabled" type="b"><default>true</default><summary>Show the desktop widget</summary></key>
+    <key name="widget-x" type="i"><default>-1</default><summary>Desktop widget X position (-1 = auto)</summary></key>
+    <key name="widget-y" type="i"><default>-1</default><summary>Desktop widget Y position (-1 = auto)</summary></key>
+    <key name="widget-hide-when-paused" type="b"><default>false</default><summary>Hide the desktop widget while paused</summary></key>
+    <key name="panel-enabled" type="b"><default>true</default><summary>Show the top bar pill</summary></key>
+    <key name="panel-position" type="s">
+      <choices><choice value="left"/><choice value="center"/><choice value="right"/></choices>
+      <default>'left'</default><summary>Top bar pill position</summary>
+    </key>
+    <key name="panel-lyrics" type="b"><default>true</default><summary>Show the live lyric line in the top bar</summary></key>
+    <key name="lock-enabled" type="b"><default>true</default><summary>Show on the lock screen</summary></key>
+    <key name="lock-hide-system-player" type="b"><default>true</default><summary>Hide GNOME's own Spotify media card on the lock screen</summary></key>
+    <key name="blur-lyrics" type="b"><default>true</default><summary>Blur lyric lines away from the current one</summary></key>
+    <key name="lyrics-offset-ms" type="i"><range min="-3000" max="3000"/><default>0</default><summary>Lyrics timing offset in milliseconds</summary></key>
+    <key name="spotify-fallback" type="b"><default>false</default><summary>Use Spotify's unofficial lyrics endpoint when LRCLIB has nothing</summary></key>
+  </schema>
+</schemalist>

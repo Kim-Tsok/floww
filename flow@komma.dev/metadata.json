@@ -1,0 +1,9 @@
+{
+  "uuid": "flow@komma.dev",
+  "name": "Flow",
+  "description": "Spotify now playing with Apple Music–style synced lyrics: a desktop widget, an adaptive top bar pill, and a lock screen card that expands into immersive lyrics.",
+  "shell-version": ["50"],
+  "session-modes": ["user", "unlock-dialog"],
+  "settings-schema": "org.gnome.shell.extensions.flow",
+  "version": 1
+}

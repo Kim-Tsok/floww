@@ -1,0 +1,227 @@
+/* Flow — Apple Music–style lyrics.  Typography: SF Pro Display when
+   installed, Inter Display / Inter otherwise. */
+
+.flow-card,
+.flow-pill,
+.flow-immersive {
+  font-family: "SF Pro Display", "Inter Display", "Inter", "Cantarell", sans-serif;
+  color: #fff;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+.flow-card {
+  border-radius: 28px;
+}
+
+.flow-card-bg {
+  background-color: #fff; /* shape only; the shader paints the colours */
+  border-radius: 28px;
+}
+
+.flow-card-content {
+  padding: 18px 18px 6px 18px;
+  spacing: 12px;
+}
+
+.flow-card-lock .flow-card-bg { border-radius: 26px; }
+
+.flow-desktop .flow-card,
+.flow-menu .flow-card {
+  box-shadow: 0 18px 48px 0 rgba(0, 0, 0, 0.38);
+}
+
+.flow-desktop-dragging .flow-card {
+  box-shadow: 0 28px 64px 0 rgba(0, 0, 0, 0.5);
+}
+
+.flow-card-header { spacing: 14px; }
+.flow-card-meta { spacing: 2px; }
+
+.flow-art {
+  border-radius: 12px;
+  box-shadow: 0 6px 18px 0 rgba(0, 0, 0, 0.35);
+}
+
+.flow-art-empty {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.flow-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.flow-artist {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* ── Scrubber ─────────────────────────────────────────────────────────── */
+.flow-scrubber { spacing: 4px; }
+.flow-scrubber-hit { height: 14px; }
+
+.flow-scrubber-track {
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.flow-scrubber-fill {
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.85);
+}
+
+.flow-time {
+  font-size: 10.5px;
+  font-weight: 600;
+  font-feature-settings: "tnum";
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+.flow-controls { spacing: 22px; padding: 0 0 2px 0; }
+
+.flow-control {
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  padding: 8px;
+  background-color: transparent;
+  transition-duration: 160ms;
+}
+
+.flow-control:hover { background-color: rgba(255, 255, 255, 0.1); }
+.flow-control:active { background-color: rgba(255, 255, 255, 0.18); }
+.flow-control-play { padding: 10px; }
+
+/* ── Lyrics ───────────────────────────────────────────────────────────── */
+.flow-lyrics { padding: 0; }
+/* Pull lines out by their hover padding so text aligns with the art. */
+.flow-card-lyrics { margin: 0 -8px; }
+
+.flow-lyric-line {
+  border-radius: 12px;
+  padding: 2px 8px;
+  background-color: transparent;
+  transition-duration: 200ms;
+}
+
+.flow-lyric-line:hover { background-color: rgba(255, 255, 255, 0.07); }
+
+.flow-lyric-text {
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.flow-interlude { spacing: 7px; padding: 6px 0; }
+.flow-interlude-dot { background-color: #fff; }
+
+.flow-lyrics-message { spacing: 4px; }
+
+.flow-lyrics-message-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.flow-lyrics-message-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── Popover ──────────────────────────────────────────────────────────── */
+.flow-menu {
+  -arrow-background-color: transparent;
+  -arrow-border-width: 0;
+  -arrow-rise: 6px;
+  -arrow-base: 0;
+}
+
+.flow-menu .popup-menu-content {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+.flow-menu .popup-menu-box { padding: 0; }
+
+/* ── Top bar pill ─────────────────────────────────────────────────────── */
+.flow-panel-button {
+  -natural-hpadding: 4px;
+  -minimum-hpadding: 2px;
+}
+
+.flow-pill {
+  border-radius: 999px;
+  padding: 3px 10px 3px 4px;
+  spacing: 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.flow-panel-button:hover .flow-pill,
+.flow-panel-button:active .flow-pill,
+.flow-panel-button:checked .flow-pill {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.panel-button.flow-panel-button,
+.panel-button.flow-panel-button:hover,
+.panel-button.flow-panel-button:active,
+.panel-button.flow-panel-button:checked {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.flow-pill-art { border-radius: 5px; }
+
+.flow-eq { spacing: 2px; }
+
+.flow-eq-bar {
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background-color: #fff;
+}
+
+.flow-pill-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ── Lock screen immersive ────────────────────────────────────────────── */
+.flow-immersive-bg { background-color: #fff; }
+
+.flow-immersive-row {
+  padding: 96px 96px 24px 112px;
+  spacing: 88px;
+}
+
+.flow-immersive-side {
+  width: 340px;
+  spacing: 14px;
+}
+
+.flow-art-big {
+  border-radius: 18px;
+  box-shadow: 0 24px 60px 0 rgba(0, 0, 0, 0.45);
+  margin-bottom: 14px;
+}
+
+.flow-title-big { font-size: 26px; font-weight: 800; }
+.flow-artist-big { font-size: 18px; }
+
+.flow-immersive .flow-controls { spacing: 34px; padding-top: 6px; }
+
+.flow-immersive-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  padding-bottom: 28px;
+}

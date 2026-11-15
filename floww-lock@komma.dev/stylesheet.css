@@ -1,0 +1,85 @@
+/* Floww Lock — liquid glass lock screen.
+   Colours of the glass itself come from the shader (tint setting); these
+   rules handle text, spacing and shadows. */
+
+/* ── Clock ───────────────────────────────────────────────────────────── */
+.floww-clock {
+  spacing: 0;
+}
+.floww-clock-time,
+.floww-clock-date {
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Glass panels ────────────────────────────────────────────────────── */
+.floww-glass {
+  box-shadow: 0 18px 48px 0 rgba(0, 0, 0, 0.22);
+}
+
+/* ── Music widget ────────────────────────────────────────────────────── */
+.floww-music-content {
+  padding: 18px 18px 8px 18px;
+  spacing: 10px;
+  color: #fff;
+}
+.floww-music-header { spacing: 14px; }
+.floww-music-meta { spacing: 2px; }
+.floww-music-art { border-radius: 12px; box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.3); }
+.floww-music-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+.floww-music-artist {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+.floww-music .flow-eq-bar { background-color: rgba(255, 255, 255, 0.85); }
+.floww-music .flow-eq { padding-top: 6px; }
+.floww-music-controls { spacing: 10px; }
+.floww-music .flow-scrubber-track { background-color: rgba(255, 255, 255, 0.25); }
+.floww-music .flow-lyric-text { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.15); }
+
+/* ── Notification count pill ─────────────────────────────────────────── */
+.floww-count-row {
+  padding: 10px 18px;
+  spacing: 8px;
+}
+.floww-count-icon { color: #fff; }
+.floww-count-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ── GNOME's own pieces, restyled ────────────────────────────────────── */
+.floww-lock .floww-notification {
+  background-color: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 22px;
+  box-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.16);
+}
+.floww-lock .floww-notification:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.floww-lock .unlock-dialog-clock-hint {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Password field as a frosted pill. */
+.floww-lock StPasswordEntry,
+.floww-lock .login-dialog-prompt-entry {
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  padding: 8px 16px;
+}
+.floww-lock StPasswordEntry:focus,
+.floww-lock .login-dialog-prompt-entry:focus {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+}

@@ -72,7 +72,7 @@ class FlowwMusicLockRoot extends St.Widget {
     }
 });
 
-function makeImmersive(state, settings) {
+export function makeImmersive(state, settings) {
     const root = new St.Widget({
         style_class: 'flow-immersive',
         layout_manager: new Clutter.BinLayout(),

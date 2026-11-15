@@ -1,0 +1,9 @@
+{
+  "uuid": "floww-lock@komma.dev",
+  "name": "Floww Lock",
+  "description": "A customizable, macOS-style liquid-glass lock screen: your own clock, wallpaper, fonts, glass and layout, with the Floww Music player built in.",
+  "shell-version": ["50"],
+  "session-modes": ["user", "unlock-dialog"],
+  "settings-schema": "org.gnome.shell.extensions.floww-lock",
+  "version": 1
+}

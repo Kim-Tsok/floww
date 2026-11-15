@@ -16,10 +16,10 @@ import {PlayerState} from './lib/playerState.js';
 import {destroySession} from './lib/http.js';
 import {addIndicator} from './lib/ui/panelPill.js';
 import {DesktopWidget} from './lib/ui/desktopWidget.js';
-import {LockScreenUI} from './lib/ui/lockScreen.js';
+import {LockScreenUI, makeImmersive} from './lib/ui/lockScreen.js';
 import {PlayerCard} from './lib/ui/playerCard.js';
 import {LyricsView} from './lib/ui/lyricsView.js';
-import {Controls, ArtView, Scrubber, AmbientBackground} from './lib/ui/widgets.js';
+import {Controls, ArtView, Scrubber, AmbientBackground, SwapLabel, EqBars} from './lib/ui/widgets.js';
 
 const LOCK_UUID = 'floww-lock@komma.dev';
 
@@ -42,6 +42,10 @@ export default class FlowwMusicExtension extends Extension {
             createArt: opts => new ArtView(state, opts),
             createScrubber: opts => new Scrubber(state, opts),
             createAmbient: opts => new AmbientBackground(state, opts),
+            createSwapLabel: opts => new SwapLabel(opts),
+            createEqBars: () => new EqBars(state),
+            // Full-screen art + lyrics view (the lock screen "immersive" mode).
+            createImmersive: () => makeImmersive(state, settings),
         };
 
         this._sessionId = Main.sessionMode.connect('updated', () => this._syncMode());

@@ -2,7 +2,7 @@
 
 Spotify with Apple Music–style synced lyrics, for GNOME Shell 50.
 
-A companion extension, **Floww Lock** (`floww-lock@komma.dev`, coming next), will replace the lock screen with a customizable macOS-style liquid-glass design and host Floww Music's player. While Floww Lock is enabled, Floww Music leaves the lock screen to it.
+A companion extension, **Floww Lock** (`floww-lock@komma.dev`), turns the lock screen into a customizable macOS-style liquid-glass design and hosts Floww Music's player. While Floww Lock is enabled, Floww Music leaves the lock screen to it. See [Floww Lock](#floww-lock) below.
 
 - **Desktop widget** is a floating card that sits under your windows. Drag it anywhere.
 - **Top bar pill** is an adaptive "island" that shows album art and equalizer bars. It springs wider to show the current lyric line. Hover it for the title and controls (shuffle, previous, play/pause, next, repeat, DJ). Click it to open the full card.
@@ -65,4 +65,45 @@ lib/ui/effects.js       GLSL: karaoke fill, edge fade, ambient gradient
 lib/ui/lyricsView.js    the lyrics renderer used everywhere
 lib/ui/visualizer.js    no-lyrics visualizer (cava or simulated)
 lib/ui/*.js             card, pill, desktop widget, lock screen
+```
+
+
+# Floww Lock
+
+A macOS-style lock screen for GNOME Shell 50, made of liquid glass.
+
+```sh
+ln -s "$PWD/floww-lock@komma.dev" ~/.local/share/gnome-shell/extensions/floww-lock@komma.dev
+glib-compile-schemas floww-lock@komma.dev/schemas
+# log out and back in, then:
+gnome-extensions enable floww-lock@komma.dev
+gnome-extensions prefs floww-lock@komma.dev   # has a "Lock now" preview button
+```
+
+**What you can change** (Preferences → Look, Clock, Layout):
+
+| | |
+|---|---|
+| Wallpaper | same as the desktop, or a different image; blur; darken |
+| Liquid glass | tint colour and strength, frost (blur), edge refraction, corner radius |
+| Clock | style (date above time, time above date, hours over minutes, time only), position (top, center, any corner), 12/24 h, size, weight, opacity |
+| Font | any installed font family, used by the clock and widgets |
+| Layout | music widget below the clock, left, right, a bottom corner, or hidden; live lyrics on/off; password prompt at the bottom (macOS) or center (GNOME) |
+| Notifications | full, a count pill you can click to peek, or hidden; below the widgets, at the bottom, or on either side |
+
+**Music widget.** It's Floww Music's player as a glass panel, with shuffle, repeat, DJ and live lyrics. Click it for full-screen lyrics. It needs Floww Music enabled; without Floww Music, Floww Lock simply has no music widget.
+
+**How the glass works.** Each panel looks through a copy of the lock wallpaper. That copy is blurred, tinted and bent at the edges by a small GLSL shader (`lib/glass.js`), and a thin light rim is drawn around it.
+
+**Safety.** GNOME keeps the password prompt, authentication and keyboard handling; Floww Lock only re-lays-out and restyles the screen and adds widgets. If GNOME's lock screen internals ever change, it doesn't attach, and you get the stock lock screen.
+
+```
+floww-lock@komma.dev/
+  extension.js        attaches while locked
+  lib/lockUI.js       wires everything into GNOME's unlock dialog
+  lib/layout.js       positions prompt, clock, widgets, notifications
+  lib/glass.js        liquid glass shader + panel
+  lib/clock.js        clock styles
+  lib/wallpaper.js    desktop / custom wallpaper, blur, dim
+  lib/musicWidget.js  glass music player (uses Floww Music's api)
 ```

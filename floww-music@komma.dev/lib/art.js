@@ -13,7 +13,7 @@ export const DEFAULT_PALETTE = [
 ];
 
 function artDir() {
-    const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'flow', 'art']);
+    const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'floww', 'art']);
     GLib.mkdir_with_parents(dir, 0o755);
     return dir;
 }
@@ -32,23 +32,81 @@ function writeFile(file, data) {
     });
 }
 
-// Returns a local file path for the art URL (downloads once).
+// Spotify art URLs encode the size in the hash prefix; the same image is
+// available at 64, 300 and 640 px.
+const SIZE_PREFIXES = {
+    64: 'ab67616d00004851',
+    300: 'ab67616d00001e02',
+    640: 'ab67616d0000b273',
+};
+const ART_TIMEOUT_MS = 5000;
+
+function normalize(url) {
+    // Spotify sometimes still hands out the legacy open.spotify.com host.
+    return url.replace('https://open.spotify.com/image/', 'https://i.scdn.co/image/');
+}
+
+function pathFor(url) {
+    const key = GLib.compute_checksum_for_string(GLib.ChecksumType.SHA1, url, -1);
+    return GLib.build_filenamev([artDir(), `${key}.img`]);
+}
+
+// Download URLs to try for `url`, smallest first: a tiny thumbnail that
+// arrives almost instantly, then the size we actually display.
+export function artSteps(url) {
+    if (!url)
+        return [];
+    if (url.startsWith('file://'))
+        return [url];
+    url = normalize(url);
+    const m = url.match(/^(https:\/\/i\.scdn\.co\/image\/)(ab67616d0000[0-9a-f]{4})(.+)$/);
+    if (!m || !Object.values(SIZE_PREFIXES).includes(m[2]))
+        return [url];
+    return [`${m[1]}${SIZE_PREFIXES[64]}${m[3]}`, `${m[1]}${SIZE_PREFIXES[300]}${m[3]}`];
+}
+
+// Already on disk? (synchronous: lets a track change swap art in the same frame)
+export function cachedArt(url) {
+    if (!url)
+        return null;
+    if (url.startsWith('file://'))
+        return Gio.File.new_for_uri(url).get_path();
+    const steps = artSteps(url);
+    for (const u of steps.reverse()) {
+        const path = pathFor(u);
+        if (GLib.file_test(path, GLib.FileTest.EXISTS))
+            return path;
+    }
+    return null;
+}
+
+// Returns a local file path for one art URL (downloads once, retries once).
 export async function fetchArt(url, cancellable) {
     if (!url)
         return null;
     if (url.startsWith('file://'))
         return Gio.File.new_for_uri(url).get_path();
-    // Spotify sometimes still hands out the legacy open.spotify.com host.
-    url = url.replace('https://open.spotify.com/image/', 'https://i.scdn.co/image/');
-    const key = GLib.compute_checksum_for_string(GLib.ChecksumType.SHA1, url, -1);
-    const path = GLib.build_filenamev([artDir(), `${key}.img`]);
+    url = normalize(url);
+    const path = pathFor(url);
     if (GLib.file_test(path, GLib.FileTest.EXISTS))
         return path;
-    const {status, bytes} = await request(url, {cancellable});
-    if (status !== 200 || !bytes.length)
-        return null;
-    await writeFile(Gio.File.new_for_path(path), bytes);
-    return path;
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const {status, bytes} = await request(url, {cancellable, timeoutMs: ART_TIMEOUT_MS});
+            if (status !== 200 || !bytes.length)
+                return null;
+            // eslint-disable-next-line no-await-in-loop
+            await writeFile(Gio.File.new_for_path(path), bytes);
+            return path;
+        } catch (e) {
+            if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                throw e;
+            lastError = e;
+        }
+    }
+    throw lastError;
 }
 
 function rgbToHsv(r, g, b) {

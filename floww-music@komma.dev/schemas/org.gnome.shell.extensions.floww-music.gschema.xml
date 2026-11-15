@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.flow" path="/org/gnome/shell/extensions/flow/">
+  <schema id="org.gnome.shell.extensions.floww-music" path="/org/gnome/shell/extensions/floww-music/">
     <key name="widget-enabled" type="b"><default>true</default><summary>Show the desktop widget</summary></key>
     <key name="widget-x" type="i"><default>-1</default><summary>Desktop widget X position (-1 = auto)</summary></key>
     <key name="widget-y" type="i"><default>-1</default><summary>Desktop widget Y position (-1 = auto)</summary></key>
@@ -16,5 +16,6 @@
     <key name="blur-lyrics" type="b"><default>true</default><summary>Blur lyric lines away from the current one</summary></key>
     <key name="lyrics-offset-ms" type="i"><range min="-3000" max="3000"/><default>0</default><summary>Lyrics timing offset in milliseconds</summary></key>
     <key name="spotify-fallback" type="b"><default>false</default><summary>Use Spotify's unofficial lyrics endpoint when LRCLIB has nothing</summary></key>
+    <key name="visualizer-cava" type="b"><default>true</default><summary>Use cava for a live audio visualizer when there are no lyrics</summary></key>
   </schema>
 </schemalist>

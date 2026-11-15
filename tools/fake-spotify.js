@@ -4,15 +4,19 @@ const START = Number(ARGV[0] ?? 55) * 1e6;
 const IFACE = `<node>
 <interface name="org.mpris.MediaPlayer2.Player">
 <method name="Next"/><method name="Previous"/><method name="PlayPause"/><method name="Play"/><method name="Pause"/>
+<method name="OpenUri"><arg direction="in" type="s"/></method>
 <method name="SetPosition"><arg direction="in" type="o"/><arg direction="in" type="x"/></method>
 <property name="PlaybackStatus" type="s" access="read"/><property name="Metadata" type="a{sv}" access="read"/>
 <property name="Position" type="x" access="read"/><property name="CanGoNext" type="b" access="read"/><property name="CanGoPrevious" type="b" access="read"/>
 <property name="CanPlay" type="b" access="read"/><property name="CanPause" type="b" access="read"/><property name="CanSeek" type="b" access="read"/><property name="CanControl" type="b" access="read"/>
+<property name="Shuffle" type="b" access="readwrite"/><property name="LoopStatus" type="s" access="readwrite"/>
 <signal name="Seeked"><arg type="x"/></signal></interface></node>`;
 const tracks = [
  {id:'0VjIjW4GlUZAMYd2vXMi3b', title:'Blinding Lights', artist:['The Weeknd'], album:'After Hours', len:200040000},
  {id:'7qiZfU4dY1lWllzX7mPBI3', title:'Shape of You', artist:['Ed Sheeran'], album:'÷ (Deluxe)', len:233713000},
+ {id:'0000000000000000000000', title:'Zzqx Nonexistent Song', artist:['Nobody Atall'], album:'None', len:180000000},
 ];
+let shuffle = false, loop = 'None';
 let ti = 0, playing = true, base = START, t0 = GLib.get_monotonic_time();
 const pos = () => playing ? base + (GLib.get_monotonic_time() - t0) : base;
 const md = () => { const t = tracks[ti]; return {
@@ -23,6 +27,9 @@ const md = () => { const t = tracks[ti]; return {
 const impl = {
  get Identity(){return 'Spotify'}, get DesktopEntry(){return 'spotify'}, CanQuit:false, CanRaise:false, HasTrackList:false, SupportedUriSchemes:[], SupportedMimeTypes:[],
  get PlaybackStatus(){return playing?'Playing':'Paused'}, get Metadata(){return md()}, get Position(){return pos()},
+ get Shuffle(){return shuffle}, set Shuffle(v){shuffle=v; obj.emit_property_changed('Shuffle', new GLib.Variant('b', v));},
+ get LoopStatus(){return loop}, set LoopStatus(v){loop=v; obj.emit_property_changed('LoopStatus', new GLib.Variant('s', v));},
+ OpenUri(u){ print('OpenUri '+u); },
  CanGoNext:true, CanGoPrevious:true, CanPlay:true, CanPause:true, CanSeek:true, CanControl:true,
  PlayPause(){ base = pos(); t0 = GLib.get_monotonic_time(); playing = !playing; obj.emit_property_changed('PlaybackStatus', new GLib.Variant('s', impl.PlaybackStatus)); },
  Play(){ if(!playing) impl.PlayPause(); }, Pause(){ if(playing) impl.PlayPause(); },
@@ -33,6 +40,6 @@ const impl = {
 const obj = Gio.DBusExportedObject.wrapJSObject(IFACE, impl);
 obj.export(Gio.DBus.session, '/org/mpris/MediaPlayer2');
 Gio.bus_own_name_on_connection(Gio.DBus.session, 'org.mpris.MediaPlayer2.spotify', 0, null, null);
-// control file: write "pause", "next", "seek N"
-GLib.timeout_add(0, 200, () => { try { const [ok, c] = GLib.file_get_contents(ARGV[2]); const cmd = new TextDecoder().decode(c).trim(); if (cmd) { GLib.file_set_contents(ARGV[2], ''); const [a,b]=cmd.split(' '); if(a==='pause') impl.PlayPause(); if(a==='next') impl.Next(); if(a==='seek') impl.SetPosition('', Number(b)*1e6);} } catch {} return true; });
+// control file: write "pause", "next", "seek N", "nolyrics" (jump to a song with no lyrics)
+GLib.timeout_add(0, 200, () => { try { const [ok, c] = GLib.file_get_contents(ARGV[2]); const cmd = new TextDecoder().decode(c).trim(); if (cmd) { GLib.file_set_contents(ARGV[2], ''); const [a,b]=cmd.split(' '); if(a==='pause') impl.PlayPause(); if(a==='next') impl.Next(); if(a==='seek') impl.SetPosition('', Number(b)*1e6); if(a==='nolyrics'){ ti=tracks.length-2; impl.Next(); } } } catch {} return true; });
 new GLib.MainLoop(null, false).run();

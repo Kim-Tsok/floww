@@ -8,18 +8,23 @@
 //   'lyrics'        lyrics loaded/changed
 //   'art'           album art + palette ready
 //   'heartbeat'     once a second while playing
+//   'options'       shuffle / repeat changed
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
 import {SpotifyMpris} from './mpris.js';
-import {LyricsProvider} from './lyrics/provider.js';
-import {fetchArt, extractPalette, DEFAULT_PALETTE} from './art.js';
+import {LyricsProvider, isOffline} from './lyrics/provider.js';
+import {fetchArt, cachedArt, artSteps, extractPalette, DEFAULT_PALETTE} from './art.js';
 
 const SYNC_INTERVAL_MS = 1000;
 const HARD_RESYNC_US = 350_000;
 const SOFT_RESYNC_US = 60_000;
+const LOOP_ORDER = ['None', 'Playlist', 'Track'];
+// Spotify's DJ lives behind this playlist URI; opening it starts the DJ on
+// accounts that have it.
+const DJ_URI = 'spotify:playlist:37i9dQZF1EYkqdzj48dyYq';
 
 // Smooth playback clock: interpolates between D-Bus position samples using
 // the monotonic clock so lyrics move every frame without polling Spotify.
@@ -71,6 +76,8 @@ export class PlayerState extends EventEmitter {
         this.art = {path: null, palette: DEFAULT_PALETTE};
         this.playing = false;
         this._trackCancellable = null;
+        this._artCancellable = null;
+        this._pendingOptions = {};
 
         this._mpris = new SpotifyMpris();
         this._mpris.connect('appeared', () => this._onAppeared());
@@ -80,6 +87,30 @@ export class PlayerState extends EventEmitter {
         this._mpris.connect('seeked', (o, pos) => {
             this._clock.set(pos);
             this.emit('seeked');
+        });
+        this._mpris.connect('options', () => {
+            this._pendingOptions = {};
+            this.emit('options');
+        });
+
+        // Lyrics that failed for lack of network come back on their own.
+        this._netMonitor = Gio.NetworkMonitor.get_default();
+        this._netId = this._netMonitor.connect('network-changed', () => this._onNetworkChanged());
+    }
+
+    _onNetworkChanged() {
+        if (this.lyrics.kind !== 'offline' || isOffline())
+            return;
+        // Debounce: interfaces flap while a connection comes up.
+        if (this._netRetryId)
+            GLib.source_remove(this._netRetryId);
+        this._netRetryId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+            this._netRetryId = 0;
+            if (this.lyrics.kind === 'offline')
+                this.reloadLyrics();
+            if (this.track && !this.art.path)
+                this._loadArt(this.track);
+            return GLib.SOURCE_REMOVE;
         });
     }
 
@@ -116,6 +147,45 @@ export class PlayerState extends EventEmitter {
         this._mpris.previous();
     }
 
+    // Shuffle / repeat: applied optimistically, then confirmed by Spotify.
+    get shuffle() {
+        return this._pendingOptions.shuffle ?? this._mpris.shuffle;
+    }
+
+    get loop() {
+        return this._pendingOptions.loop ?? this._mpris.loopStatus;
+    }
+
+    toggleShuffle() {
+        const on = !this.shuffle;
+        this._pendingOptions.shuffle = on;
+        this._mpris.setShuffle(on);
+        this.emit('options');
+    }
+
+    cycleLoop() {
+        const next = LOOP_ORDER[(LOOP_ORDER.indexOf(this.loop) + 1) % LOOP_ORDER.length];
+        this._pendingOptions.loop = next;
+        this._mpris.setLoopStatus(next);
+        this.emit('options');
+    }
+
+    startDJ() {
+        this._mpris.openUri(DJ_URI);
+    }
+
+    // Manual "try again" from the UI (also used after reconnecting).
+    reloadLyrics() {
+        const track = this.track;
+        if (!track || this.lyrics.kind === 'loading')
+            return;
+        this._trackCancellable?.cancel();
+        this._trackCancellable = new Gio.Cancellable();
+        this.lyrics = {kind: 'loading'};
+        this.emit('lyrics');
+        this._loadLyrics(track, this._trackCancellable, true);
+    }
+
     seekTo(seconds) {
         if (!this.track)
             return;
@@ -134,6 +204,7 @@ export class PlayerState extends EventEmitter {
     _onVanished() {
         this._stopSync();
         this._trackCancellable?.cancel();
+        this._artCancellable?.cancel();
         this.track = null;
         this.playing = false;
         this._clock.set(0, false);
@@ -181,43 +252,72 @@ export class PlayerState extends EventEmitter {
         this.emit('track');
         this.emit('lyrics');
         this.emit('seeked');
-        this._loadArt(md);
+        if (artChanged)
+            this._loadArt(md);
         this._loadLyrics(md, this._trackCancellable);
         // Spotify updates position a beat after metadata.
         this._resyncSoon(250);
     }
 
-    async _loadLyrics(track, cancellable) {
+    async _loadLyrics(track, cancellable, force = false) {
         if (track.isAd) {
             this.lyrics = {kind: 'none'};
             this.emit('lyrics');
             return;
         }
         try {
-            const result = await this._lyricsProvider.get(track, cancellable);
+            const result = await this._lyricsProvider.get(track, cancellable, {force});
             if (cancellable.is_cancelled() || this.track?.id !== track.id)
                 return;
             this.lyrics = result;
         } catch (e) {
             if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
-            logError(e, 'Flow: lyrics');
+            logError(e, 'Floww Music: lyrics');
             this.lyrics = {kind: 'none'};
         }
         this.emit('lyrics');
     }
 
+    _setArt(path, palette) {
+        this.art = {path, palette: palette ?? (path ? extractPalette(path) : this.art.palette)};
+        this.emit('art');
+    }
+
+    // Shows the new cover as soon as anything is available: a cached copy
+    // instantly, else a tiny thumbnail, then the full size. Never leaves the
+    // previous song's cover up while we wait.
     async _loadArt(track) {
-        const cancellable = this._trackCancellable;
-        try {
-            const path = await fetchArt(track.artUrl, cancellable);
-            if (cancellable?.is_cancelled() || this.track?.artUrl !== track.artUrl)
-                return;
-            this.art = {path, palette: path ? extractPalette(path) : DEFAULT_PALETTE};
-            this.emit('art');
-        } catch (e) {
-            if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                console.debug(`Flow: art failed: ${e.message}`);
+        this._artCancellable?.cancel();
+        const cancellable = this._artCancellable = new Gio.Cancellable();
+        const url = track.artUrl;
+        const current = () => !cancellable.is_cancelled() && this.track?.artUrl === url;
+
+        const cached = cachedArt(url);
+        if (cached)
+            this._setArt(cached);
+        else if (this.art.path)
+            this._setArt(null, this.art.palette); // placeholder, keep colours
+
+        const steps = artSteps(url);
+        const full = steps[steps.length - 1];
+        if (!full)
+            return;
+        for (const step of steps) {
+            if (cached && step !== full)
+                continue; // already showing something at least this good
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                const path = await fetchArt(step, cancellable);
+                if (!current())
+                    return;
+                if (path && path !== this.art.path)
+                    this._setArt(path);
+            } catch (e) {
+                if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                    return;
+                console.debug(`Floww Music: art failed: ${e.message}`);
+            }
         }
     }
 
@@ -275,7 +375,11 @@ export class PlayerState extends EventEmitter {
 
     destroy() {
         this._stopSync();
+        this._netMonitor.disconnect(this._netId);
+        if (this._netRetryId)
+            GLib.source_remove(this._netRetryId);
         this._trackCancellable?.cancel();
+        this._artCancellable?.cancel();
         this._mpris.destroy();
         this.disconnectAll?.();
     }

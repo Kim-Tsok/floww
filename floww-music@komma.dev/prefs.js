@@ -1,5 +1,6 @@
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import Secret from 'gi://Secret';
 
@@ -17,7 +18,7 @@ function switchRow(settings, key, title, subtitle = '') {
 export default class FlowPrefs extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
-        const page = new Adw.PreferencesPage({title: 'Flow', icon_name: 'audio-x-generic-symbolic'});
+        const page = new Adw.PreferencesPage({title: 'Floww Music', icon_name: 'audio-x-generic-symbolic'});
         window.add(page);
 
         // Surfaces
@@ -59,6 +60,12 @@ export default class FlowPrefs extends ExtensionPreferences {
         });
         settings.bind('lyrics-offset-ms', offset, 'value', Gio.SettingsBindFlags.DEFAULT);
         lyrics.add(offset);
+
+        const hasCava = GLib.find_program_in_path('cava') !== null;
+        lyrics.add(switchRow(settings, 'visualizer-cava', 'Live visualizer with cava',
+            hasCava
+                ? 'When a song has no lyrics, the expanded player shows bars that follow the actual audio'
+                : 'cava is not installed, so the visualizer is simulated. Install it with: sudo dnf install cava'));
 
         // Spotify fallback
         const sp = new Adw.PreferencesGroup({

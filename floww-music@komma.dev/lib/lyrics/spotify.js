@@ -37,6 +37,7 @@ async function getToken(cancellable) {
     const {json} = await getJson('https://open.spotify.com/api/token?reason=transport&productType=web-player', {
         headers: {'Cookie': `sp_dc=${spDc}`, 'User-Agent': BROWSER_UA, 'App-Platform': 'WebPlayer'},
         cancellable,
+        timeoutMs: 5000,
     });
     if (!json?.accessToken || json.isAnonymous)
         return null;
@@ -59,6 +60,7 @@ export async function fetchSpotify(track, cancellable) {
                     'User-Agent': BROWSER_UA,
                 },
                 cancellable,
+                timeoutMs: 5000,
             });
         if (status === 401)
             _token = null;
@@ -75,7 +77,7 @@ export async function fetchSpotify(track, cancellable) {
         return {kind: 'synced', lines: finalizeLines(raw, track.length / 1e6), source: 'Spotify'};
     } catch (e) {
         if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-            console.debug(`Flow: Spotify lyrics unavailable: ${e.message}`);
+            console.debug(`Floww Music: Spotify lyrics unavailable: ${e.message}`);
         return null;
     }
 }

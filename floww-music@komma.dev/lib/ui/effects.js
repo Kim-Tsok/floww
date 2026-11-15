@@ -28,7 +28,7 @@ cogl_color_out *= mix(dim, 1.0, lit);
 `;
 
 export const KaraokeEffect = GObject.registerClass(
-class FlowKaraokeEffect extends Shell.GLSLEffect {
+class FlowwMusicKaraokeEffect extends Shell.GLSLEffect {
     _init(params) {
         super._init(params);
         this._loc = {
@@ -73,7 +73,7 @@ cogl_color_out *= a;
 `;
 
 export const FadeEffect = GObject.registerClass(
-class FlowFadeEffect extends Shell.GLSLEffect {
+class FlowwMusicFadeEffect extends Shell.GLSLEffect {
     _init(params) {
         super._init(params);
         this._top = this.get_uniform_location('fade_top');
@@ -131,7 +131,7 @@ cogl_color_out = vec4(col * a, a);
 `;
 
 export const AmbientEffect = GObject.registerClass(
-class FlowAmbientEffect extends Shell.GLSLEffect {
+class FlowwMusicAmbientEffect extends Shell.GLSLEffect {
     _init(params) {
         super._init(params);
         this._loc = ['c0', 'c1', 'c2', 'c3'].map(n => this.get_uniform_location(n));

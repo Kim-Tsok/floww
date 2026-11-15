@@ -39,7 +39,7 @@ function pointerOnControl(container) {
 // allocation time (after the dialog has laid out its own clock), and lets
 // the immersive layer fill the monitor.
 const LockRoot = GObject.registerClass(
-class FlowLockRoot extends St.Widget {
+class FlowwMusicLockRoot extends St.Widget {
     _init(dialog) {
         super._init({reactive: false});
         this._dialog = dialog;
@@ -54,13 +54,19 @@ class FlowLockRoot extends St.Widget {
             const full = new Clutter.ActorBox({x1: 0, y1: 0, x2: w, y2: h});
             this.immersive.allocate(full);
         }
-        if (this.card) {
+        if (this.card && this.card.get_parent() === this) {
+            // Fallback placement (notification list unavailable): under the
+            // clock, but never over the notifications.
+            const notifBox = this._dialog._notificationsBox?.get_allocation_box();
             const stackBox = this._dialog._stack.get_allocation_box();
             const clockBox = this._dialog._clock.get_allocation_box();
             const [, natW] = this.card.get_preferred_width(-1);
             const [, natH] = this.card.get_preferred_height(natW);
             const x = Math.round((w - natW) / 2);
-            const y = Math.round(Math.min(stackBox.y1 + clockBox.y2 + CARD_GAP, h - natH - 24));
+            let maxY = h - natH - 24;
+            if (notifBox && this._dialog._notificationsBox.visible && notifBox.get_height() > 0)
+                maxY = Math.min(maxY, notifBox.y1 - natH - 12);
+            const y = Math.round(Math.max(0, Math.min(stackBox.y1 + clockBox.y2 + CARD_GAP, maxY)));
             this.card.allocate(new Clutter.ActorBox({x1: x, y1: y, x2: x + natW, y2: y + natH}));
         }
     }
@@ -98,7 +104,8 @@ function makeImmersive(state, settings) {
     left.add_child(title);
     left.add_child(artist);
     left.add_child(new Scrubber(state));
-    left.add_child(new Controls(state, {size: 26, playSize: 38}));
+    left.add_child(new Controls(state, {size: 26, playSize: 38, extended: true,
+        styleClass: 'flow-controls flow-controls-extended'}));
     row.add_child(left);
 
     const lyrics = new LyricsView(state, settings, {
@@ -141,7 +148,7 @@ export class LockScreenUI {
             try {
                 this._attach(dialog);
             } catch (e) {
-                logError(e, 'Flow: lock screen attach failed');
+                logError(e, 'Floww Music: lock screen attach failed');
                 this._detach();
             }
             return;
@@ -163,11 +170,38 @@ export class LockScreenUI {
         this._root.add_constraint(new Layout.MonitorConstraint({primary: true}));
         dialog.add_child(this._root);
 
-        // Card
+        // Card: lives at the top of GNOME's notification list (where its
+        // own media card goes), so GNOME's layout stacks notifications under
+        // it and moves the clock up as needed: no overlap.
         this._card = new PlayerCard(this._state, this._settings, 'lock');
         this._card.set_pivot_point(0.5, 0.5);
         this._card.add_style_class_name('flow-card-clickable');
-        this._root.add_child(this._card);
+        const list = dialog._notificationsBox?._notificationBox;
+        if (list instanceof St.BoxLayout) {
+            this._card.add_style_class_name('flow-card-in-list');
+            // Match the notification column instead of forcing our width
+            // (the column is narrower than the standalone card and clips).
+            this._card.set_width(-1);
+            this._card.x_expand = true;
+            this._card.x_align = Clutter.ActorAlign.FILL;
+            list.insert_child_at_index(this._card, 0);
+            this._inList = true;
+            this._card.connect('destroy', () => {
+                this._inList = false;
+                this._cardVisId = 0;
+                this._listId = 0; // list goes away with the dialog
+            });
+            this._cardVisId = this._card.connect('notify::visible', () => this._refreshNotifications());
+            // GNOME inserts players at 0 and sources after them; keep the
+            // music card first.
+            this._list = list;
+            this._listId = list.connect('child-added', () => {
+                if (list.get_child_at_index(0) !== this._card)
+                    list.set_child_at_index(this._card, 0);
+            });
+        } else {
+            this._root.add_child(this._card);
+        }
         this._root.card = this._card;
         const click = new Clutter.ClickGesture();
         click.connect('may-recognize', () => !pointerOnControl(this._card));
@@ -214,8 +248,19 @@ export class LockScreenUI {
         ];
 
         this._hideSystemPlayer(true);
+        this._refreshNotifications();
         this._onPromptProgress();
         this._ticker.wake();
+    }
+
+    // NotificationsBox hides itself when it thinks it's empty; tell it to
+    // re-check now that our card is (or isn't) one of its children.
+    _refreshNotifications() {
+        try {
+            this._dialog?._notificationsBox?._updateVisibility?.();
+        } catch (e) {
+            console.debug(`Floww Music: notification box refresh failed: ${e.message}`);
+        }
     }
 
     // GNOME already shows a small media card in the notifications area; with
@@ -240,7 +285,7 @@ export class LockScreenUI {
                 });
             }
         } catch (e) {
-            console.debug(`Flow: could not hide system player: ${e.message}`);
+            console.debug(`Floww Music: could not hide system player: ${e.message}`);
         }
     }
 
@@ -293,7 +338,9 @@ export class LockScreenUI {
         const cs = (0.9 + 0.1 * pres) * (1 + 0.25 * m);
         this._card.set_scale(cs, cs);
         this._card.opacity = Math.round(255 * clamp(pres, 0, 1) * clamp(1 - m * 1.6, 0, 1));
-        this._card.visible = this._card.opacity > 0;
+        const vis = this._card.opacity > 0;
+        if (vis !== this._card.visible)
+            this._card.visible = vis;
         this._card.reactive = !this._immersiveOn && this._state.available;
 
         // …while the immersive layer settles in from slightly smaller.
@@ -327,6 +374,19 @@ export class LockScreenUI {
                 a.opacity = 255;
         }
         this._ticker?.destroy();
+        if (this._cardVisId)
+            this._card.disconnect(this._cardVisId);
+        this._cardVisId = 0;
+        if (this._listId)
+            this._list.disconnect(this._listId);
+        this._listId = 0;
+        if (this._inList) {
+            this._card.destroy();
+            this._inList = false;
+            try {
+                d._notificationsBox._updateVisibility?.();
+            } catch {}
+        }
         this._root?.destroy();
         this._root = null;
         this._dialog = null;

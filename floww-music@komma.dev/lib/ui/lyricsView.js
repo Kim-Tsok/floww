@@ -28,6 +28,7 @@ import {bindState} from './widgets.js';
 const DIM = 0.38;          // inactive line brightness (also the unlit karaoke level)
 const HOVER_DIM = 0.75;
 const INACTIVE_SCALE = 0.965;
+const ACTIVE_SCALE = 1.06;   // the sung line grows a little
 const STAGGER = 0.045;     // seconds between consecutive lines
 const MAX_STAGGER_LINES = 8;
 const LEAD = 0.18;         // scroll a hair before the line starts
@@ -55,8 +56,28 @@ function utf8Offsets(text) {
     return out;
 }
 
+// Small, quiet "try again" button for when lyrics couldn't be found.
+export function makeRefreshButton(state, {size = 14} = {}) {
+    const icon = new St.Icon({icon_name: 'view-refresh-symbolic', icon_size: size,
+        pivot_point: new Graphene.Point({x: 0.5, y: 0.5})});
+    const btn = new St.Button({
+        style_class: 'flow-lyrics-refresh',
+        child: icon,
+        can_focus: true,
+        track_hover: true,
+        accessible_name: 'Look for lyrics again',
+    });
+    btn.connect('clicked', () => {
+        icon.remove_all_transitions();
+        icon.rotation_angle_z = 0;
+        icon.ease({rotation_angle_z: 360, duration: 700, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
+        state.reloadLyrics();
+    });
+    return btn;
+}
+
 const Interlude = GObject.registerClass(
-class FlowInterlude extends St.BoxLayout {
+class FlowwMusicInterlude extends St.BoxLayout {
     _init(dotSize) {
         super._init({
             style_class: 'flow-interlude',
@@ -92,7 +113,7 @@ class FlowInterlude extends St.BoxLayout {
 });
 
 export const LyricsView = GObject.registerClass(
-class FlowLyricsView extends St.Widget {
+class FlowwMusicLyricsView extends St.Widget {
     _init(state, settings, {
         fontSize = 22,
         spacing = 0.55,     // in em, between lines
@@ -271,7 +292,7 @@ class FlowLyricsView extends St.Widget {
         };
     }
 
-    _showMessage(text, sub = '') {
+    _showMessage(text, sub = '', {refresh = false} = {}) {
         const box = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'flow-lyrics-message',
@@ -281,8 +302,18 @@ class FlowLyricsView extends St.Widget {
         const title = new St.Label({text, style_class: 'flow-lyrics-message-title'});
         title.clutter_text.line_wrap = true;
         box.add_child(title);
-        if (sub)
-            box.add_child(new St.Label({text: sub, style_class: 'flow-lyrics-message-sub'}));
+        if (sub) {
+            const subLabel = new St.Label({text: sub, style_class: 'flow-lyrics-message-sub'});
+            subLabel.clutter_text.line_wrap = true;
+            box.add_child(subLabel);
+            if (this._emptyAlign === 'center')
+                subLabel.x_align = Clutter.ActorAlign.CENTER;
+        }
+        if (refresh) {
+            const btn = makeRefreshButton(this._state);
+            btn.x_align = this._emptyAlign === 'center' ? Clutter.ActorAlign.CENTER : Clutter.ActorAlign.START;
+            box.add_child(btn);
+        }
         if (this._emptyAlign === 'center') {
             box.x_align = Clutter.ActorAlign.CENTER;
             title.x_align = Clutter.ActorAlign.CENTER;
@@ -336,9 +367,13 @@ class FlowLyricsView extends St.Widget {
         case 'instrumental':
             this._showMessage('♪', 'Instrumental');
             break;
+        case 'offline':
+            if (this._state.available)
+                this._showMessage("You're offline", 'Lyrics will load when you\'re back online', {refresh: true});
+            break;
         default:
             if (this._state.available)
-                this._showMessage('No lyrics for this song', this._state.track?.title ?? '');
+                this._showMessage('No lyrics for this song', this._state.track?.title ?? '', {refresh: true});
         }
 
         this._needsSnap = true;
@@ -396,7 +431,8 @@ class FlowLyricsView extends St.Widget {
         this._dirty = false;
         const node = this.get_theme_node();
         this._padX = node.get_padding(St.Side.LEFT);
-        const lineW = Math.max(40, w - this._padX - node.get_padding(St.Side.RIGHT));
+        // Wrap as if already enlarged, so the active line never spills over.
+        const lineW = Math.max(40, Math.floor((w - this._padX - node.get_padding(St.Side.RIGHT)) / ACTIVE_SCALE));
         for (const it of this._items) {
             if (it.kind === 'line') {
                 it.actor.set_width(lineW);
@@ -477,7 +513,7 @@ class FlowLyricsView extends St.Widget {
             if (it.plain) {
                 op = 0.85; sc = 1; br = 0;
             } else if (isActive) {
-                op = 1; sc = 1; br = 0;
+                op = 1; sc = ACTIVE_SCALE; br = 0;
             } else {
                 op = this._userScrolling || it.actor.hover ? HOVER_DIM : DIM;
                 sc = INACTIVE_SCALE;
@@ -547,12 +583,16 @@ class FlowLyricsView extends St.Widget {
         const gap = this._fontSize * this._spacingEm;
         for (let i = 0; i < this._items.length; i++) {
             const it = this._items[i];
-            ys[i] = y;
             if (it.kind === 'interlude') {
+                ys[i] = y;
                 const e = Math.max(0, it.expand.value);
                 y += (it.height + gap) * e;
             } else {
-                y += it.height + gap;
+                // Lines scale around their vertical centre; make room above
+                // and below as they grow so neighbours never overlap.
+                const grow = Math.max(0, it.scale.value - 1) * it.height / 2;
+                ys[i] = y + grow;
+                y += it.height + gap + grow * 2;
             }
         }
         return ys;

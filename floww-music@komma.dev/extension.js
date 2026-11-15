@@ -1,10 +1,15 @@
-// Flow — Apple Music–style Spotify lyrics for GNOME Shell.
+// Floww Music — Apple Music–style Spotify lyrics for GNOME Shell.
 //
 // One PlayerState feeds three surfaces. In the user session we show the
 // desktop widget and the top bar pill; when the screen locks those are torn
 // down and the lock screen UI takes over (and vice versa on unlock).
+//
+// Floww Lock (floww-lock@komma.dev) builds its own lock screen and borrows
+// our player through `extension.api`; while it is enabled we leave the lock
+// screen to it.
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {PlayerState} from './lib/playerState.js';
@@ -12,29 +17,67 @@ import {destroySession} from './lib/http.js';
 import {addIndicator} from './lib/ui/panelPill.js';
 import {DesktopWidget} from './lib/ui/desktopWidget.js';
 import {LockScreenUI} from './lib/ui/lockScreen.js';
+import {PlayerCard} from './lib/ui/playerCard.js';
+import {LyricsView} from './lib/ui/lyricsView.js';
+import {Controls, ArtView, Scrubber, AmbientBackground} from './lib/ui/widgets.js';
 
-export default class FlowExtension extends Extension {
+const LOCK_UUID = 'floww-lock@komma.dev';
+
+export default class FlowwMusicExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._state = new PlayerState(this._settings);
         this._mode = null;
 
+        const settings = this._settings;
+        const state = this._state;
+        // Public surface for Floww Lock. Bump `version` on breaking changes.
+        this.api = {
+            version: 1,
+            state,
+            settings,
+            createCard: (variant = 'lock') => new PlayerCard(state, settings, variant),
+            createLyricsView: opts => new LyricsView(state, settings, opts),
+            createControls: opts => new Controls(state, opts),
+            createArt: opts => new ArtView(state, opts),
+            createScrubber: opts => new Scrubber(state, opts),
+            createAmbient: opts => new AmbientBackground(state, opts),
+        };
+
         this._sessionId = Main.sessionMode.connect('updated', () => this._syncMode());
         this._settingIds = [
             'widget-enabled', 'panel-enabled', 'panel-position', 'lock-enabled',
         ].map(k => this._settings.connect(`changed::${k}`, () => this._rebuild()));
+        this._lockActive = this._isLockExtensionActive();
+        this._extId = Main.extensionManager.connect('extension-state-changed', (m, ext) => {
+            if (ext?.uuid !== LOCK_UUID)
+                return;
+            const active = this._isLockExtensionActive();
+            if (active !== this._lockActive) {
+                this._lockActive = active;
+                if (this._mode === 'lock')
+                    this._rebuild();
+            }
+        });
 
         this._syncMode();
     }
 
     disable() {
         Main.sessionMode.disconnect(this._sessionId);
+        Main.extensionManager.disconnect(this._extId);
         this._settingIds.forEach(id => this._settings.disconnect(id));
         this._teardown();
         this._state.destroy();
         destroySession();
+        this.api = null;
         this._state = null;
         this._settings = null;
+    }
+
+    _isLockExtensionActive() {
+        const ext = Main.extensionManager.lookup(LOCK_UUID);
+        return ext?.state === ExtensionUtils.ExtensionState.ACTIVE;
     }
 
     _syncMode() {
@@ -49,7 +92,7 @@ export default class FlowExtension extends Extension {
         this._teardown();
         const s = this._settings;
         if (this._mode === 'lock') {
-            if (s.get_boolean('lock-enabled'))
+            if (s.get_boolean('lock-enabled') && !this._lockActive)
                 this._lock = new LockScreenUI(this._state, s);
             return;
         }

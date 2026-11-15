@@ -29,7 +29,7 @@ export function bindState(widget, state, handlers) {
 
 // ── Ambient background ──────────────────────────────────────────────────
 export const AmbientBackground = GObject.registerClass(
-class FlowAmbientBackground extends St.Widget {
+class FlowwMusicAmbientBackground extends St.Widget {
     _init(state, {styleClass = 'flow-ambient', dim = 1.0} = {}) {
         super._init({style_class: styleClass, x_expand: true, y_expand: true});
         this._state = state;
@@ -92,7 +92,7 @@ class FlowAmbientBackground extends St.Widget {
 
 // ── Album art with cross-fade + play/pause "breathing" scale ────────────
 export const ArtView = GObject.registerClass(
-class FlowArtView extends St.Widget {
+class FlowwMusicArtView extends St.Widget {
     _init(state, {size = 64, radius = 10, pauseScale = 0.86, styleClass = 'flow-art'} = {}) {
         super._init({
             style_class: styleClass,
@@ -127,6 +127,14 @@ class FlowArtView extends St.Widget {
     }
 
     _show(path, instant = false) {
+        if (this._layer && path === this._path)
+            return;
+        // Same song, sharper image (thumbnail → full size): a quick dissolve
+        // instead of the full "new cover" animation.
+        const trackId = this._state.track?.id ?? null;
+        const upgrade = !instant && this._path && path && trackId === this._trackId;
+        this._path = path;
+        this._trackId = trackId;
         const layer = new St.Widget({
             style_class: 'flow-art-layer',
             x_expand: true,
@@ -141,12 +149,18 @@ class FlowArtView extends St.Widget {
         this.add_child(layer);
         const old = this._layer;
         this._layer = layer;
-        if (!instant) {
+        if (upgrade) {
+            layer.ease({opacity: 255, duration: 180, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        } else if (!instant) {
             layer.set_scale(1.06, 1.06);
             layer.ease({opacity: 255, scale_x: 1, scale_y: 1, duration: 520,
                 mode: Clutter.AnimationMode.EASE_OUT_QUINT});
         }
-        if (old) {
+        if (old && upgrade) {
+            // Keep the thumbnail underneath until the sharp copy covers it.
+            old.ease({opacity: 0, duration: 180, delay: 180,
+                mode: Clutter.AnimationMode.LINEAR, onStopped: () => old.destroy()});
+        } else if (old) {
             old.ease({opacity: 0, scale_x: 0.94, scale_y: 0.94, duration: 420,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
                 onStopped: () => old.destroy()});
@@ -156,7 +170,7 @@ class FlowArtView extends St.Widget {
 
 // ── Text that cross-fades + slides when its content changes ─────────────
 export const SwapLabel = GObject.registerClass(
-class FlowSwapLabel extends St.Widget {
+class FlowwMusicSwapLabel extends St.Widget {
     _init({styleClass, distance = 6, align = 'left'} = {}) {
         super._init({layout_manager: new Clutter.BinLayout(), x_expand: true, clip_to_allocation: false});
         this._styleClass = styleClass;
@@ -209,7 +223,7 @@ class FlowSwapLabel extends St.Widget {
 // ── Scrubber ────────────────────────────────────────────────────────────
 // Fill uses scale_x (no relayout per frame). Grows on hover like Apple's.
 export const Scrubber = GObject.registerClass(
-class FlowScrubber extends St.BoxLayout {
+class FlowwMusicScrubber extends St.BoxLayout {
     _init(state, {showTimes = true} = {}) {
         super._init({orientation: Clutter.Orientation.VERTICAL, style_class: 'flow-scrubber', x_expand: true});
         this._state = state;
@@ -322,12 +336,15 @@ class FlowScrubber extends St.BoxLayout {
 
 // ── Transport controls with springy press feedback ──────────────────────
 const ControlButton = GObject.registerClass(
-class FlowControlButton extends St.Button {
-    _init(iconName, {size = 20, styleClass = 'flow-control'} = {}) {
-        const icon = new St.Icon({icon_name: iconName, icon_size: size});
+class FlowwMusicControlButton extends St.Button {
+    _init(iconName, {size = 20, styleClass = 'flow-control', label = null, tooltip = ''} = {}) {
+        const icon = label
+            ? new St.Label({text: label, style_class: 'flow-control-label', y_align: Clutter.ActorAlign.CENTER})
+            : new St.Icon({icon_name: iconName, icon_size: size});
         super._init({
             style_class: styleClass,
             child: icon,
+            accessible_name: tooltip,
             can_focus: true,
             track_hover: true,
             pivot_point: new Graphene.Point({x: 0.5, y: 0.5}),
@@ -349,6 +366,13 @@ class FlowControlButton extends St.Button {
         this.connect('destroy', () => this._ticker.destroy());
     }
 
+    setActive(on) {
+        if (on)
+            this.add_style_class_name('flow-control-on');
+        else
+            this.remove_style_class_name('flow-control-on');
+    }
+
     setIcon(name) {
         if (this._icon.icon_name === name)
             return;
@@ -365,22 +389,58 @@ class FlowControlButton extends St.Button {
     }
 });
 
+const LOOP_ICONS = {
+    None: 'media-playlist-repeat-symbolic',
+    Playlist: 'media-playlist-repeat-symbolic',
+    Track: 'media-playlist-repeat-song-symbolic',
+};
+
+// prev / play / next; `extended` adds shuffle, repeat (off → all → one) and
+// Spotify DJ:  ⤮  ⏮  ⏯  ⏭  ↻  DJ
 export const Controls = GObject.registerClass(
-class FlowControls extends St.BoxLayout {
-    _init(state, {size = 20, playSize = 28} = {}) {
-        super._init({style_class: 'flow-controls', x_align: Clutter.ActorAlign.CENTER});
+class FlowwMusicControls extends St.BoxLayout {
+    _init(state, {size = 20, playSize = 28, extended = false, styleClass = 'flow-controls'} = {}) {
+        super._init({style_class: styleClass, x_align: Clutter.ActorAlign.CENTER});
         this._state = state;
-        this._prev = new ControlButton('media-skip-backward-symbolic', {size});
-        this._play = new ControlButton(this._playIcon(), {size: playSize, styleClass: 'flow-control flow-control-play'});
-        this._next = new ControlButton('media-skip-forward-symbolic', {size});
-        this._icon = this._play;
+        const small = Math.round(size * 0.8);
+        const toggle = 'flow-control flow-control-toggle';
+        if (extended) {
+            this._shuffle = new ControlButton('media-playlist-shuffle-symbolic', {size: small, styleClass: toggle, tooltip: 'Shuffle'});
+            this._shuffle.connect('clicked', () => state.toggleShuffle());
+            this.add_child(this._shuffle);
+        }
+        this._prev = new ControlButton('media-skip-backward-symbolic', {size, tooltip: 'Previous'});
+        this._play = new ControlButton(this._playIcon(), {size: playSize, styleClass: 'flow-control flow-control-play', tooltip: 'Play/Pause'});
+        this._next = new ControlButton('media-skip-forward-symbolic', {size, tooltip: 'Next'});
         this._prev.connect('clicked', () => state.previous());
         this._play.connect('clicked', () => state.playPause());
         this._next.connect('clicked', () => state.next());
         this.add_child(this._prev);
         this.add_child(this._play);
         this.add_child(this._next);
-        bindState(this, state, {'playback': () => this._play.setIcon(this._playIcon())});
+        if (extended) {
+            this._loop = new ControlButton(LOOP_ICONS.None, {size: small, styleClass: toggle, tooltip: 'Repeat'});
+            this._loop.connect('clicked', () => state.cycleLoop());
+            this.add_child(this._loop);
+            this._dj = new ControlButton(null, {label: 'DJ', styleClass: `${toggle} flow-control-dj`, tooltip: 'Spotify DJ'});
+            this._dj.connect('clicked', () => state.startDJ());
+            this.add_child(this._dj);
+            this._syncOptions();
+        }
+        bindState(this, state, {
+            'playback': () => this._play.setIcon(this._playIcon()),
+            'options': () => this._syncOptions(),
+            'availability': () => this._syncOptions(),
+        });
+    }
+
+    _syncOptions() {
+        if (!this._shuffle)
+            return;
+        this._shuffle.setActive(this._state.shuffle);
+        const loop = this._state.loop;
+        this._loop.setActive(loop !== 'None');
+        this._loop.setIcon(LOOP_ICONS[loop] ?? LOOP_ICONS.None);
     }
 
     _playIcon() {
@@ -390,7 +450,7 @@ class FlowControls extends St.BoxLayout {
 
 // ── Equalizer bars (the pill's "now playing" pulse) ─────────────────────
 export const EqBars = GObject.registerClass(
-class FlowEqBars extends St.BoxLayout {
+class FlowwMusicEqBars extends St.BoxLayout {
     _init(state) {
         super._init({style_class: 'flow-eq', y_align: Clutter.ActorAlign.CENTER});
         this._state = state;

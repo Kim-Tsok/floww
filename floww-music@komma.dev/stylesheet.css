@@ -98,8 +98,8 @@
 
 /* ── Lyrics ───────────────────────────────────────────────────────────── */
 .flow-lyrics { padding: 0; }
-/* Pull lines out by their hover padding so text aligns with the art. */
-.flow-card-lyrics { margin: 0 -8px; }
+/* Note: St has no negative margins (they wrap to huge values and break
+   layout), so lines keep their 8px hover padding inside the card. */
 
 .flow-lyric-line {
   border-radius: 12px;
@@ -225,3 +225,63 @@
   color: rgba(255, 255, 255, 0.4);
   padding-bottom: 28px;
 }
+
+/* ── Extended controls: ⤮ ⏮ ⏯ ⏭ ↻ DJ ───────────────────────────────── */
+.flow-controls-extended { spacing: 12px; }
+.flow-immersive .flow-controls-extended { spacing: 12px; }
+
+.flow-control-toggle { color: rgba(255, 255, 255, 0.45); }
+.flow-control-toggle:hover { color: rgba(255, 255, 255, 0.75); }
+.flow-control-toggle.flow-control-on { color: #fff; }
+
+.flow-control-dj { padding: 6px 8px; }
+.flow-control-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+/* Compact controls inside the top bar pill */
+.flow-controls-pill {
+  spacing: 1px;
+  padding: 0 0 0 7px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+}
+.flow-controls-pill .flow-control { padding: 3px 4px; }
+.flow-controls-pill .flow-control-play { padding: 3px 4px; }
+.flow-controls-pill .flow-control-dj { padding: 2px 4px; }
+.flow-controls-pill .flow-control-label { font-size: 9.5px; }
+
+/* ── Lyrics refresh ───────────────────────────────────────────────────── */
+.flow-lyrics-refresh {
+  color: rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  padding: 6px;
+  margin-top: 4px;
+  background-color: transparent;
+  transition-duration: 160ms;
+}
+.flow-lyrics-refresh:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Visualizer (expanded player, no lyrics) ──────────────────────────── */
+.flow-viz-box { spacing: 6px; padding: 8px 0 0 0; }
+.flow-visualizer-bars { spacing: 4px; }
+.flow-visualizer-bar {
+  width: 5px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.8);
+}
+.flow-viz-caption-row { spacing: 2px; }
+.flow-viz-caption {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+}
+.flow-viz-caption-row .flow-lyrics-refresh { padding: 4px; margin-top: 0; }
+
+/* ── Lock card inside GNOME's notification list ───────────────────────── */
+.flow-card-in-list { margin-bottom: 12px; }

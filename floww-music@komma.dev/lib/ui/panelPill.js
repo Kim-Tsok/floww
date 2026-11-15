@@ -1,8 +1,9 @@
 // Adaptive top bar pill — a "Dynamic Island" for Spotify.
 //
 // Rest: tiny art + equalizer bars. When a lyric line starts it springs wider
-// and the line slides in; long silences collapse it again. Hover reveals the
-// title. Click opens the full player card as a popover.
+// and the line slides in; long silences collapse it again. Hover swaps in the
+// title and compact controls (⤮ ⏮ ⏯ ⏭ ↻ DJ). Click opens the full player card
+// as a popover; the pill holds still while it is open.
 
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
@@ -13,16 +14,17 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 
-import {Spring, Ticker, Presets} from '../anim/spring.js';
+import {Spring, Ticker, Presets, clamp} from '../anim/spring.js';
 import {lineIndexAt} from '../lyrics/lrc.js';
-import {ArtView, EqBars, bindState} from './widgets.js';
+import {ArtView, EqBars, Controls, bindState} from './widgets.js';
 import {PlayerCard} from './playerCard.js';
 
 const MAX_TEXT_WIDTH = 380;
+const MAX_TITLE_WIDTH = 160;
 const COLLAPSE_AFTER = 1.2;  // seconds of an interlude before collapsing
 
 const PillText = GObject.registerClass(
-class FlowPillText extends St.Widget {
+class FlowwMusicPillText extends St.Widget {
     _init() {
         super._init({clip_to_allocation: true, y_expand: true, layout_manager: new Clutter.BinLayout()});
         this._label = null;
@@ -46,15 +48,15 @@ class FlowPillText extends St.Widget {
     }
 
     // Natural width of `text` (capped) so the pill can spring to it.
-    measure(text) {
+    measure(text, max = MAX_TEXT_WIDTH) {
         const l = this._make(text);
         this.add_child(l);
         const [, w] = l.get_preferred_width(-1);
         l.destroy();
-        return Math.min(MAX_TEXT_WIDTH, Math.ceil(w));
+        return Math.min(max, Math.ceil(w));
     }
 
-    setText(text, direction = 1) {
+    setText(text, direction = 1, max = MAX_TEXT_WIDTH) {
         if (text === this._text)
             return;
         this._text = text;
@@ -78,7 +80,7 @@ class FlowPillText extends St.Widget {
         l.opacity = 0;
         l.translation_y = 9 * direction;
         this.add_child(l);
-        l.set_width(Math.min(MAX_TEXT_WIDTH, l.get_preferred_width(-1)[1]));
+        l.set_width(Math.min(max, l.get_preferred_width(-1)[1]));
         this._label = l;
         l.ease({opacity: 255, translation_y: 0, duration: 420, delay: 70,
             mode: Clutter.AnimationMode.EASE_OUT_QUINT});
@@ -86,7 +88,7 @@ class FlowPillText extends St.Widget {
 });
 
 export const FlowIndicator = GObject.registerClass(
-class FlowIndicator extends PanelMenu.Button {
+class FlowwMusicIndicator extends PanelMenu.Button {
     _init(state, settings) {
         super._init(0.5, 'Flow', false);
         this._state = state;
@@ -100,15 +102,30 @@ class FlowIndicator extends PanelMenu.Button {
         });
         this._art = new ArtView(state, {size: 18, radius: 5, pauseScale: 0.82, styleClass: 'flow-pill-art'});
         this._eq = new EqBars(state);
+        // Fixed layout: children keep their natural size while the clip's
+        // width springs, so they get revealed instead of squashed.
+        this._eqClip = new St.Widget({clip_to_allocation: true, y_align: Clutter.ActorAlign.CENTER});
+        this._eqClip.add_child(this._eq);
         this._text = new PillText();
         this._text.set_width(0);
+
+        // Compact controls, revealed on hover inside a width-springing clip.
+        this._controls = new Controls(state, {size: 14, playSize: 16, extended: true,
+            styleClass: 'flow-controls flow-controls-pill'});
+        this._ctrlClip = new St.Widget({clip_to_allocation: true,
+            y_align: Clutter.ActorAlign.CENTER, width: 0, visible: false});
+        this._ctrlClip.add_child(this._controls);
+
         this._pill.add_child(this._art);
-        this._pill.add_child(this._eq);
+        this._pill.add_child(this._eqClip);
         this._pill.add_child(this._text);
+        this._pill.add_child(this._ctrlClip);
         this.add_child(this._pill);
 
         this._width = new Spring(0, Presets.bouncy, 0.3);
-        this._hoverScale = new Spring(1, Presets.snappy);
+        this._ctrlW = new Spring(0, Presets.bouncy, 0.3);
+        this._eqShow = new Spring(1, Presets.snappy, 0.01);
+        this._mode = 'rest';
         this._lineIdx = -2;
         this._ticker = new Ticker(this);
         this._ticker.add((dt, now) => this._tick(dt, now));
@@ -118,10 +135,11 @@ class FlowIndicator extends PanelMenu.Button {
         this._card = new PlayerCard(state, settings, 'popover');
         this.menu.box.add_child(this._card);
 
-        this.connect('notify::hover', () => {
-            this._hoverScale.target = this.hover ? 1.04 : 1;
-            this._ticker.wake();
-        });
+        // Clicking a pill control must not also toggle the popover.
+        this._clickGesture?.connect('may-recognize', () => !this._pointerOnControl());
+
+        this.connect('notify::hover', () => this._ticker.wake());
+        this.menu.connect('open-state-changed', () => this._ticker.wake());
         this._settingsId = settings.connect('changed::panel-lyrics', () => this._ticker.wake());
 
         bindState(this, state, {
@@ -173,11 +191,32 @@ class FlowIndicator extends PanelMenu.Button {
         }
     }
 
+    _pointerOnControl() {
+        const [x, y] = global.get_pointer();
+        let a = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x, y);
+        while (a && a !== this) {
+            if (a instanceof St.Button)
+                return true;
+            a = a.get_parent();
+        }
+        return false;
+    }
+
+    // 'hover' shows title + controls, 'rest' the live lyric. While the
+    // popover is open the pill keeps whatever it was showing: opening the
+    // menu grabs the pointer (hover → false), and reacting to that made the
+    // pill visibly shrink on every click.
+    _currentMode() {
+        if (this.menu.isOpen)
+            return this._mode;
+        return this.hover && this._state.track ? 'hover' : 'rest';
+    }
+
     // What the pill should say right now ('' = compact).
     _desiredText(t) {
         const st = this._state;
-        if (this.hover && st.track)
-            return {text: `${st.track.title} · ${st.track.artist}`, key: 'hover'};
+        if (this._mode === 'hover' && st.track)
+            return {text: st.track.title, key: `hover:${st.track.id}`};
         if (!this._settings.get_boolean('panel-lyrics') || st.lyrics.kind !== 'synced')
             return {text: '', key: 'none'};
         const lines = st.lyrics.lines;
@@ -194,22 +233,49 @@ class FlowIndicator extends PanelMenu.Button {
 
     _tick(dt) {
         const st = this._state;
+        const mode = this._currentMode();
+        if (mode !== this._mode) {
+            this._mode = mode;
+            const hover = mode === 'hover';
+            if (hover)
+                this._ctrlClip.visible = true; // styled → measurable
+            this._eqShow.target = hover ? 0 : 1;
+            this._key = null; // re-evaluate the text
+        }
         const {text, key, idx} = this._desiredText(st.lyricTime());
         if (key !== this._key) {
             const dir = idx !== undefined && idx < this._lineIdx ? -1 : 1;
             this._key = key;
             if (idx !== undefined)
                 this._lineIdx = idx;
-            this._text.setText(text, dir);
-            this._width.target = text ? this._text.measure(text) + 4 : 0;
+            const max = this._mode === 'hover' ? MAX_TITLE_WIDTH : MAX_TEXT_WIDTH;
+            this._text.setText(text, dir, max);
+            this._width.target = text ? this._text.measure(text, max) + 4 : 0;
         }
         let moving = this._width.step(dt);
         const w = Math.max(0, this._width.value);
         this._text.set_width(Math.round(w));
         this._text.visible = w > 0.5;
-        if (this._hoverScale.step(dt))
+
+        // Measured every frame: the controls only get their CSS (and so
+        // their real size) once mapped.
+        const nat = this._controls.get_preferred_width(-1)[1];
+        this._ctrlW.target = this._mode === 'hover' ? nat : 0;
+        if (this._ctrlW.step(dt))
             moving = true;
-        this._pill.set_scale(this._hoverScale.value, this._hoverScale.value);
+        const cw = Math.max(0, this._ctrlW.value);
+        this._ctrlClip.set_width(Math.round(cw));
+        this._ctrlClip.visible = cw > 0.5 || this._mode === 'hover';
+        this._controls.opacity = Math.round(255 * clamp(cw / Math.max(1, nat), 0, 1));
+
+        if (this._eqShow.step(dt))
+            moving = true;
+        const e = clamp(this._eqShow.value, 0, 1);
+        const eqW = this._eq.get_preferred_width(-1)[1];
+        this._eqClip.set_width(Math.round(eqW * e));
+        this._eqClip.visible = e > 0.02;
+        this._eq.opacity = Math.round(255 * e);
+
         // Keep ticking while playing (lyric lines advance with time).
         return moving || (st.playing && st.lyrics.kind === 'synced');
     }

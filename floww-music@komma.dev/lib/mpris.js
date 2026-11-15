@@ -14,6 +14,9 @@ const PLAYER_IFACE = `
     <method name="Next"/>
     <method name="Previous"/>
     <method name="PlayPause"/>
+    <method name="OpenUri">
+      <arg direction="in" type="s" name="Uri"/>
+    </method>
     <method name="SetPosition">
       <arg direction="in" type="o" name="TrackId"/>
       <arg direction="in" type="x" name="Position"/>
@@ -24,6 +27,8 @@ const PLAYER_IFACE = `
     <property name="CanGoNext" type="b" access="read"/>
     <property name="CanGoPrevious" type="b" access="read"/>
     <property name="CanSeek" type="b" access="read"/>
+    <property name="Shuffle" type="b" access="readwrite"/>
+    <property name="LoopStatus" type="s" access="readwrite"/>
     <signal name="Seeked">
       <arg type="x" name="Position"/>
     </signal>
@@ -36,7 +41,7 @@ function first(v) {
     return Array.isArray(v) ? v[0] : v;
 }
 
-// Signals: 'appeared', 'vanished', 'metadata', 'status', 'seeked'(posUs)
+// Signals: 'appeared', 'vanished', 'metadata', 'status', 'seeked'(posUs), 'options'
 export class SpotifyMpris extends EventEmitter {
     constructor() {
         super();
@@ -65,6 +70,8 @@ export class SpotifyMpris extends EventEmitter {
                     this.emit('metadata', this.metadata);
                 if (keys.includes('PlaybackStatus'))
                     this.emit('status', this.playing);
+                if (keys.includes('Shuffle') || keys.includes('LoopStatus'))
+                    this.emit('options');
             });
             this._seekedId = proxy.connectSignal('Seeked', (p, sender, [pos]) => {
                 this.emit('seeked', pos);
@@ -72,7 +79,7 @@ export class SpotifyMpris extends EventEmitter {
             this.emit('appeared');
         } catch (e) {
             if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                logError(e, 'Flow: could not connect to Spotify');
+                logError(e, 'Floww Music: could not connect to Spotify');
         }
     }
 
@@ -93,6 +100,42 @@ export class SpotifyMpris extends EventEmitter {
 
     get playing() {
         return this._proxy?.PlaybackStatus === 'Playing';
+    }
+
+    get shuffle() {
+        return this._proxy?.get_cached_property('Shuffle')?.unpack() ?? false;
+    }
+
+    // 'None' | 'Track' | 'Playlist'
+    get loopStatus() {
+        return this._proxy?.get_cached_property('LoopStatus')?.unpack() ?? 'None';
+    }
+
+    _setProperty(name, variant) {
+        if (!this._proxy)
+            return;
+        this._proxy.call('org.freedesktop.DBus.Properties.Set',
+            new GLib.Variant('(ssv)', [PLAYER_IFACE_NAME, name, variant]),
+            Gio.DBusCallFlags.NONE, 2000, this._cancellable, (p, r) => {
+                try {
+                    p.call_finish(r);
+                } catch (e) {
+                    console.debug(`Floww Music: could not set ${name}: ${e.message}`);
+                }
+            });
+    }
+
+    setShuffle(on) {
+        this._setProperty('Shuffle', new GLib.Variant('b', on));
+    }
+
+    setLoopStatus(status) {
+        this._setProperty('LoopStatus', new GLib.Variant('s', status));
+    }
+
+    openUri(uri) {
+        this._proxy?.OpenUriAsync(uri).catch(e =>
+            console.debug(`Floww Music: OpenUri failed: ${e.message}`));
     }
 
     get canSeek() {

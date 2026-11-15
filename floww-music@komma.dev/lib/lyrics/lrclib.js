@@ -4,6 +4,7 @@ import {getJson, query} from '../http.js';
 import {parseLrc, parsePlain} from './lrc.js';
 
 const API = 'https://lrclib.net/api';
+const REQUEST_TIMEOUT_MS = 5000;
 
 // "Song - Remastered 2011", "Song (feat. X)", "Song - Live at …" → "Song"
 export function cleanTitle(title) {
@@ -34,7 +35,7 @@ async function getExact(track, title, cancellable) {
         artist_name: track.mainArtist || track.artist,
         album_name: track.album,
         duration: Math.round(track.length / 1e6) || undefined,
-    })}`, {cancellable});
+    })}`, {cancellable, timeoutMs: REQUEST_TIMEOUT_MS});
     if (status === 404)
         return null;
     return toResult(json, track);
@@ -44,7 +45,7 @@ async function search(track, title, cancellable) {
     const {json} = await getJson(`${API}/search?${query({
         track_name: title,
         artist_name: track.mainArtist || track.artist,
-    })}`, {cancellable});
+    })}`, {cancellable, timeoutMs: REQUEST_TIMEOUT_MS});
     if (!Array.isArray(json) || !json.length)
         return null;
     const dur = track.length / 1e6;
@@ -53,17 +54,21 @@ async function search(track, title, cancellable) {
     return toResult(pick, track);
 }
 
+function pickBest(results) {
+    return results.find(r => r?.kind === 'synced') ??
+        results.find(r => r?.kind === 'instrumental') ??
+        results.find(r => r) ?? null;
+}
+
+// Two rounds instead of four sequential requests: exact lookups for every
+// title variant in parallel, then searches in parallel only if needed.
+// Network errors propagate so the caller can tell "offline" from "none".
 export async function fetchLrclib(track, cancellable) {
     const titles = [...new Set([track.title, cleanTitle(track.title)])].filter(Boolean);
-    let best = null;
-    for (const title of titles) {
-        for (const fn of [getExact, search]) {
-            // eslint-disable-next-line no-await-in-loop
-            const r = await fn(track, title, cancellable);
-            if (r?.kind === 'synced' || r?.kind === 'instrumental')
-                return r;
-            best ??= r;
-        }
-    }
-    return best;
+    const exact = await Promise.all(titles.map(t => getExact(track, t, cancellable)));
+    const first = pickBest(exact);
+    if (first?.kind === 'synced' || first?.kind === 'instrumental')
+        return first;
+    const found = await Promise.all(titles.map(t => search(track, t, cancellable)));
+    return pickBest([...found, first]);
 }

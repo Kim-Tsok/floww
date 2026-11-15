@@ -1,12 +1,23 @@
-// Thin MPRIS client for Spotify. Emits plain JS signals, knows nothing about UI.
+// MPRIS client: follows every media player on the session bus (Spotify,
+// browsers, Rhythmbox, mpv, …) and exposes the one that matters right now.
+// Emits plain JS signals, knows nothing about UI.
+//
+// Which player is "active":
+//   • whichever started playing most recently;
+//   • while nothing plays, the current one stays (pausing never steals focus);
+//   • if it goes away, Spotify first, then the most recently heard one.
+// With `player-source` = 'spotify', only Spotify is considered.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
-const BUS_NAME = 'org.mpris.MediaPlayer2.spotify';
+const PREFIX = 'org.mpris.MediaPlayer2.';
 const OBJECT_PATH = '/org/mpris/MediaPlayer2';
 const PLAYER_IFACE_NAME = 'org.mpris.MediaPlayer2.Player';
+// playerctld mirrors other players; following it would show everything twice.
+const IGNORED = ['org.mpris.MediaPlayer2.playerctld'];
+const NO_TRACK = '/org/mpris/MediaPlayer2/TrackList/NoTrack';
 
 const PLAYER_IFACE = `
 <node>
@@ -41,31 +52,90 @@ function first(v) {
     return Array.isArray(v) ? v[0] : v;
 }
 
-// Signals: 'appeared', 'vanished', 'metadata', 'status', 'seeked'(posUs), 'options'
-export class SpotifyMpris extends EventEmitter {
-    constructor() {
+function isSpotifyName(name) {
+    return name.toLowerCase().includes('spotify');
+}
+
+// Signals: 'appeared', 'vanished', 'switched', 'metadata', 'status',
+//          'seeked'(posUs), 'options'
+export class MprisClient extends EventEmitter {
+    constructor(settings = null) {
         super();
-        this._proxy = null;
+        this._settings = settings;
+        this._players = new Map(); // busName → {proxy, ids, startedAt, seenAt}
+        this._activeName = null;
         this._cancellable = new Gio.Cancellable();
-        this._watchId = Gio.bus_watch_name(Gio.BusType.SESSION, BUS_NAME,
-            Gio.BusNameWatcherFlags.NONE,
-            () => this._onAppeared(),
-            () => this._onVanished());
+
+        this._ownerId = Gio.DBus.session.signal_subscribe('org.freedesktop.DBus',
+            'org.freedesktop.DBus', 'NameOwnerChanged', '/org/freedesktop/DBus', null,
+            Gio.DBusSignalFlags.NONE, (c, sender, path, iface, signal, params) => {
+                const [name, oldOwner, newOwner] = params.deepUnpack();
+                if (!name.startsWith(PREFIX))
+                    return;
+                if (oldOwner)
+                    this._removePlayer(name);
+                if (newOwner)
+                    this._addPlayer(name);
+            });
+        this._sourceId = settings?.connect('changed::player-source', () => this._rescan());
+        this._rescan();
     }
 
-    get available() {
-        return this._proxy !== null;
+    _wanted(name) {
+        if (!name.startsWith(PREFIX) || IGNORED.includes(name))
+            return false;
+        const source = this._settings?.get_string('player-source') ?? 'any';
+        return source !== 'spotify' || isSpotifyName(name);
     }
 
-    async _onAppeared() {
+    _rescan() {
+        Gio.DBus.session.call('org.freedesktop.DBus', '/org/freedesktop/DBus',
+            'org.freedesktop.DBus', 'ListNames', null, null, Gio.DBusCallFlags.NONE,
+            -1, this._cancellable, (c, res) => {
+                let names = [];
+                try {
+                    [names] = c.call_finish(res).deepUnpack();
+                } catch (e) {
+                    if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                        logError(e, 'Floww Music: could not list media players');
+                    return;
+                }
+                for (const name of [...this._players.keys()]) {
+                    if (!this._wanted(name))
+                        this._removePlayer(name);
+                }
+                for (const name of names) {
+                    if (this._wanted(name) && !this._players.has(name))
+                        this._addPlayer(name);
+                }
+            });
+    }
+
+    async _addPlayer(name) {
+        if (!this._wanted(name) || this._players.has(name))
+            return;
+        const entry = {proxy: null, ids: null, startedAt: 0, seenAt: GLib.get_monotonic_time()};
+        this._players.set(name, entry);
         try {
-            const proxy = await PlayerProxy.newAsync(Gio.DBus.session, BUS_NAME,
+            const proxy = await PlayerProxy.newAsync(Gio.DBus.session, name,
                 OBJECT_PATH, this._cancellable);
-            if (this._cancellable.is_cancelled())
+            if (this._cancellable.is_cancelled() || this._players.get(name) !== entry)
                 return;
-            this._proxy = proxy;
-            this._propsId = proxy.connect('g-properties-changed', (p, changed) => {
+            entry.proxy = proxy;
+            if (proxy.PlaybackStatus === 'Playing')
+                entry.startedAt = GLib.get_monotonic_time();
+            const propsId = proxy.connect('g-properties-changed', (p, changed) => {
                 const keys = Object.keys(changed.deepUnpack());
+                if (keys.includes('PlaybackStatus')) {
+                    const now = GLib.get_monotonic_time();
+                    if (proxy.PlaybackStatus === 'Playing')
+                        entry.startedAt = now;
+                    entry.seenAt = now;
+                    if (this._choose())
+                        return; // a switch re-reads everything
+                }
+                if (name !== this._activeName)
+                    return;
                 if (keys.includes('Metadata'))
                     this.emit('metadata', this.metadata);
                 if (keys.includes('PlaybackStatus'))
@@ -73,33 +143,89 @@ export class SpotifyMpris extends EventEmitter {
                 if (keys.includes('Shuffle') || keys.includes('LoopStatus'))
                     this.emit('options');
             });
-            this._seekedId = proxy.connectSignal('Seeked', (p, sender, [pos]) => {
-                this.emit('seeked', pos);
+            const seekedId = proxy.connectSignal('Seeked', (p, sender, [pos]) => {
+                if (name === this._activeName)
+                    this.emit('seeked', pos);
             });
-            this.emit('appeared');
+            entry.ids = [propsId, seekedId];
+            this._choose();
         } catch (e) {
+            if (this._players.get(name) === entry)
+                this._players.delete(name);
             if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                logError(e, 'Floww Music: could not connect to Spotify');
+                console.debug(`Floww Music: could not connect to ${name}: ${e.message}`);
         }
     }
 
-    _onVanished() {
-        if (!this._proxy)
+    _removePlayer(name) {
+        const entry = this._players.get(name);
+        if (!entry)
             return;
-        this._dropProxy();
-        this.emit('vanished');
+        this._players.delete(name);
+        if (entry.proxy && entry.ids) {
+            entry.proxy.disconnect(entry.ids[0]);
+            entry.proxy.disconnectSignal(entry.ids[1]);
+        }
+        this._choose();
     }
 
-    _dropProxy() {
-        if (!this._proxy)
-            return;
-        this._proxy.disconnect(this._propsId);
-        this._proxy.disconnectSignal(this._seekedId);
-        this._proxy = null;
+    // Picks the active player. Returns true if it changed.
+    _choose() {
+        const ready = [...this._players].filter(([, e]) => e.proxy);
+        const playing = ready.filter(([, e]) => e.proxy.PlaybackStatus === 'Playing')
+            .sort((a, b) => b[1].startedAt - a[1].startedAt);
+        let next = null;
+        if (playing.length)
+            next = playing[0][0];
+        else if (this._activeName && this._players.get(this._activeName)?.proxy)
+            next = this._activeName;
+        else if (ready.length)
+            next = (ready.find(([n]) => isSpotifyName(n)) ?? ready.sort((a, b) => b[1].seenAt - a[1].seenAt)[0])[0];
+
+        if (next === this._activeName)
+            return false;
+        const prev = this._activeName;
+        this._activeName = next;
+        if (!prev)
+            this.emit('appeared');
+        else if (!next)
+            this.emit('vanished');
+        else
+            this.emit('switched');
+        return true;
+    }
+
+    get _proxy() {
+        return this._players.get(this._activeName)?.proxy ?? null;
+    }
+
+    get available() {
+        return this._proxy !== null;
+    }
+
+    get busName() {
+        return this._activeName;
+    }
+
+    get isSpotify() {
+        return !!this._activeName && isSpotifyName(this._activeName);
     }
 
     get playing() {
         return this._proxy?.PlaybackStatus === 'Playing';
+    }
+
+    // 'Playing' | 'Paused' | 'Stopped' | null
+    get playbackStatus() {
+        return this._proxy?.PlaybackStatus ?? null;
+    }
+
+    get hasShuffle() {
+        return !!this._proxy?.get_cached_property('Shuffle');
+    }
+
+    get hasLoop() {
+        return !!this._proxy?.get_cached_property('LoopStatus');
     }
 
     get shuffle() {
@@ -147,32 +273,46 @@ export class SpotifyMpris extends EventEmitter {
         if (!v)
             return null;
         const m = v.recursiveUnpack();
-        const trackPath = m['mpris:trackid'] ?? '';
-        // Spotify: /com/spotify/track/<id>  (ads use /com/spotify/ad/…)
-        const parts = String(trackPath).split('/');
-        const kind = parts[parts.length - 2] ?? '';
-        let spotifyId = parts[parts.length - 1] ?? '';
+        let trackPath = String(m['mpris:trackid'] ?? '');
+        if (trackPath === NO_TRACK)
+            trackPath = '';
+        const title = m['xesam:title'] ?? '';
+        const artists = m['xesam:artist'];
+        const artist = Array.isArray(artists) ? artists.join(', ') : String(artists ?? '');
         const url = m['xesam:url'] ?? '';
-        if (!spotifyId && url.includes('/track/'))
-            spotifyId = url.split('/track/')[1].split('?')[0];
+        const spotify = this.isSpotify;
+
+        let id, isAd = false;
+        if (spotify) {
+            // Spotify: /com/spotify/track/<id>  (ads use /com/spotify/ad/…)
+            const parts = trackPath.split('/');
+            isAd = parts[parts.length - 2] === 'ad';
+            id = parts[parts.length - 1] ?? '';
+            if (!id && url.includes('/track/'))
+                id = url.split('/track/')[1].split('?')[0];
+        }
+        // Others: by what's playing, so the lyrics cache works across players.
+        id ||= `${title}|${first(artists) ?? ''}|${m['xesam:album'] ?? ''}`;
         return {
-            trackPath: String(trackPath),
-            id: spotifyId || `${m['xesam:title']}-${first(m['xesam:artist'])}`,
-            isAd: kind === 'ad',
-            title: m['xesam:title'] ?? '',
-            artist: (m['xesam:artist'] ?? []).join?.(', ') ?? String(m['xesam:artist'] ?? ''),
-            mainArtist: first(m['xesam:artist']) ?? '',
+            busName: this._activeName,
+            isSpotify: spotify,
+            trackPath,
+            id,
+            isAd,
+            title,
+            artist,
+            mainArtist: first(artists) ?? '',
             album: m['xesam:album'] ?? '',
             length: Number(m['mpris:length'] ?? 0), // µs
             artUrl: m['mpris:artUrl'] ?? '',
         };
     }
 
-    // Live position in µs straight from Spotify (the cached property is stale).
+    // Live position in µs straight from the player (the cached property is stale).
     async queryPosition() {
-        if (!this._proxy)
-            return null;
         const proxy = this._proxy;
+        if (!proxy)
+            return null;
         const res = await new Promise((resolve, reject) => {
             proxy.call('org.freedesktop.DBus.Properties.Get',
                 new GLib.Variant('(ss)', [PLAYER_IFACE_NAME, 'Position']),
@@ -208,7 +348,17 @@ export class SpotifyMpris extends EventEmitter {
 
     destroy() {
         this._cancellable.cancel();
-        Gio.bus_unwatch_name(this._watchId);
-        this._dropProxy();
+        Gio.DBus.session.signal_unsubscribe(this._ownerId);
+        if (this._sourceId)
+            this._settings.disconnect(this._sourceId);
+        for (const name of [...this._players.keys()]) {
+            const entry = this._players.get(name);
+            this._players.delete(name);
+            if (entry.proxy && entry.ids) {
+                entry.proxy.disconnect(entry.ids[0]);
+                entry.proxy.disconnectSignal(entry.ids[1]);
+            }
+        }
+        this._activeName = null;
     }
 }

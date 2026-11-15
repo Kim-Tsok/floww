@@ -1,5 +1,10 @@
-// Liquid glass: a blurred, tinted copy of the wallpaper behind the widget,
-// bent at the edges like a thick lens, with a thin specular rim.
+// Glass panels in three materials (setting `glass-material`):
+//   liquid    a blurred, tinted copy of the wallpaper behind the widget,
+//             bent at the edges like a thick lens, with a specular rim
+//   frosted   the same wallpaper, heavily frosted and flat: no lens, a
+//             softer rim (macOS vibrancy)
+//   gradient  no see-through: a moving colour gradient (the album colours
+//             for the music widget), with the same rounded rim
 //
 // How it works: each Glass holds a clone of the lock wallpaper, offset so it
 // lines up exactly with what's behind it. Shell's blur runs on that clone
@@ -127,7 +132,7 @@ export function parseColor(str) {
 // `settings` is the Floww Lock GSettings.
 export const Glass = GObject.registerClass(
 class FlowwLockGlass extends St.Widget {
-    _init(getBackdrop, settings, {styleClass = 'floww-glass', radius = null, reactive = false} = {}) {
+    _init(getBackdrop, settings, {styleClass = 'floww-glass', radius = null, reactive = false, getFill = null} = {}) {
         super._init({
             style_class: styleClass,
             layout_manager: new Clutter.BinLayout(),
@@ -137,6 +142,8 @@ class FlowwLockGlass extends St.Widget {
         this._getBackdrop = getBackdrop;
         this._settings = settings;
         this._fixedRadius = radius;
+        this._getFill = getFill;
+        this._fill = null;
 
         // Backdrop: wallpaper clone, blurred, then shaped by GlassEffect.
         // Blur and glass live on separate actors: Shell's blur doesn't chain
@@ -153,7 +160,7 @@ class FlowwLockGlass extends St.Widget {
         this.add_child(this._bd);
 
         this._child = null;
-        this._settingsIds = ['glass-tint', 'glass-blur', 'glass-refraction', 'glass-radius']
+        this._settingsIds = ['glass-tint', 'glass-blur', 'glass-refraction', 'glass-radius', 'glass-material']
             .map(k => settings.connect(`changed::${k}`, () => this._syncLook()));
         this.connect('destroy', () => {
             this._settingsIds.forEach(id => settings.disconnect(id));
@@ -176,13 +183,41 @@ class FlowwLockGlass extends St.Widget {
         this.add_child(actor);
     }
 
+    get material() {
+        return this._settings.get_string('glass-material');
+    }
+
     _syncLook() {
         const r = this.radius;
+        const material = this.material;
         this.set_style(`border-radius: ${r}px;`);
-        const blur = this._settings.get_int('glass-blur');
-        this._blur.radius = blur;
+        for (const m of ['liquid', 'frosted', 'gradient']) {
+            if (m === material)
+                this.add_style_class_name(`floww-${m}`);
+            else
+                this.remove_style_class_name(`floww-${m}`);
+        }
+
+        // Gradient: swap the wallpaper for a colour fill.
+        const gradient = material === 'gradient';
+        if (gradient && !this._fill) {
+            this._fill = this._getFill?.() ??
+                new St.Widget({style_class: 'floww-gradient-fill'});
+            this._blurHost.add_child(this._fill);
+        }
+        this._fill?.set({visible: gradient});
+        this._clone.visible = !gradient;
+
+        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        let blur = this._settings.get_int('glass-blur');
+        if (material === 'frosted')
+            blur = Math.max(blur, 40);
+        if (gradient)
+            blur = 0;
+        this._blur.radius = blur * scale;
         this._blur.enabled = blur > 0;
         this._updateShader();
+        this.refreshBackdrop();
     }
 
     _updateShader() {
@@ -190,14 +225,28 @@ class FlowwLockGlass extends St.Widget {
         // (and a theme node) before we're on stage.
         const w = this._lastW ?? 0, h = this._lastH ?? 0;
         const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const material = this.material;
+        const tint = parseColor(this._settings.get_string('glass-tint'));
+        let bend = this._settings.get_int('glass-refraction') / 100 * 14 * scale;
+        let rim = 0.55;
+        if (material === 'frosted') {
+            // Flat, milky pane: no lens, more tint, a hairline rim.
+            bend = 0;
+            rim = 0.28;
+            tint[3] = Math.min(0.6, tint[3] + 0.1);
+        } else if (material === 'gradient') {
+            bend = 0;
+            rim = 0.32;
+            tint[3] = 0;
+        }
         this._fx.update({
             width: w + PAD * 2,
             height: h + PAD * 2,
             pad: PAD,
             radius: this.radius * scale,
-            bend: this._settings.get_int('glass-refraction') / 100 * 14 * scale,
-            tint: parseColor(this._settings.get_string('glass-tint')),
-            rim: 0.55,
+            bend,
+            tint,
+            rim,
         });
     }
 
@@ -213,6 +262,12 @@ class FlowwLockGlass extends St.Widget {
     }
 
     _aim() {
+        if (this.material === 'gradient') {
+            this._clone.source = null;
+            this._bd.visible = this.mapped;
+            this._bd.queue_redraw();
+            return;
+        }
         const src = this._getBackdrop();
         if (!src || !this.mapped) {
             this._clone.source = null;
@@ -256,6 +311,8 @@ class FlowwLockGlass extends St.Widget {
         const w = box.get_width(), h = box.get_height();
         this._bd.allocate(new Clutter.ActorBox({x1: -PAD, y1: -PAD, x2: w + PAD, y2: h + PAD}));
         this._blurHost.allocate(new Clutter.ActorBox({x1: 0, y1: 0, x2: w + PAD * 2, y2: h + PAD * 2}));
+        if (this._fill?.visible)
+            this._fill.allocate(new Clutter.ActorBox({x1: 0, y1: 0, x2: w + PAD * 2, y2: h + PAD * 2}));
         if (w !== this._lastW || h !== this._lastH) {
             this._lastW = w;
             this._lastH = h;

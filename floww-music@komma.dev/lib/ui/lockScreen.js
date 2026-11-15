@@ -9,7 +9,6 @@
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
-import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -17,23 +16,9 @@ import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
 
 import {Spring, Ticker, Presets, clamp} from '../anim/spring.js';
 import {PlayerCard} from './playerCard.js';
-import {LyricsView} from './lyricsView.js';
-import {AmbientBackground, ArtView, SwapLabel, Scrubber, Controls, bindState} from './widgets.js';
+import {makeImmersive, pointerOnControl} from './immersive.js';
 
 const CARD_GAP = 36;
-
-// True when the pointer is over a button/scrubber inside `container`, so a
-// click there operates that control instead of morphing the view.
-function pointerOnControl(container) {
-    const [x, y] = global.get_pointer();
-    let a = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x, y);
-    while (a && a !== container) {
-        if (a instanceof St.Button || a.has_style_class_name?.('flow-scrubber-hit'))
-            return true;
-        a = a.get_parent();
-    }
-    return false;
-}
 
 // Fullscreen container that places the card right under GNOME's clock at
 // allocation time (after the dialog has laid out its own clock), and lets
@@ -71,67 +56,6 @@ class FlowwMusicLockRoot extends St.Widget {
         }
     }
 });
-
-export function makeImmersive(state, settings) {
-    const root = new St.Widget({
-        style_class: 'flow-immersive',
-        layout_manager: new Clutter.BinLayout(),
-        x_expand: true,
-        y_expand: true,
-        reactive: true,
-        track_hover: true,
-        pivot_point: new Graphene.Point({x: 0.5, y: 0.5}),
-    });
-    root.add_child(new AmbientBackground(state, {styleClass: 'flow-immersive-bg', dim: 0.78}));
-
-    const column = new St.BoxLayout({
-        orientation: Clutter.Orientation.VERTICAL,
-        x_expand: true,
-        y_expand: true,
-    });
-    root.add_child(column);
-    const row = new St.BoxLayout({style_class: 'flow-immersive-row', x_expand: true, y_expand: true});
-    column.add_child(row);
-
-    const left = new St.BoxLayout({
-        orientation: Clutter.Orientation.VERTICAL,
-        style_class: 'flow-immersive-side',
-        y_align: Clutter.ActorAlign.CENTER,
-    });
-    left.add_child(new ArtView(state, {size: 340, radius: 18, pauseScale: 0.9, styleClass: 'flow-art flow-art-big'}));
-    const title = new SwapLabel({styleClass: 'flow-title flow-title-big'});
-    const artist = new SwapLabel({styleClass: 'flow-artist flow-artist-big'});
-    left.add_child(title);
-    left.add_child(artist);
-    left.add_child(new Scrubber(state));
-    left.add_child(new Controls(state, {size: 26, playSize: 38, extended: true,
-        styleClass: 'flow-controls flow-controls-extended'}));
-    row.add_child(left);
-
-    const lyrics = new LyricsView(state, settings, {
-        fontSize: 40,
-        anchor: 0.34,
-        styleClass: 'flow-lyrics flow-immersive-lyrics',
-        fade: [0.16, 0.24],
-        maxBlur: 5,
-    });
-    row.add_child(lyrics);
-
-    const hint = new St.Label({
-        style_class: 'flow-immersive-hint',
-        text: 'Click the background to go back · type to unlock',
-        x_align: Clutter.ActorAlign.CENTER,
-    });
-    column.add_child(hint);
-
-    const sync = animate => {
-        title.setText(state.track?.title ?? '', animate);
-        artist.setText(state.track?.artist ?? '', animate);
-    };
-    bindState(root, state, {'track': () => sync(true)});
-    sync(false);
-    return root;
-}
 
 export class LockScreenUI {
     constructor(state, settings) {
@@ -208,19 +132,17 @@ export class LockScreenUI {
         click.connect('recognize', () => this._setImmersive(true));
         this._card.add_action(click);
 
-        // Immersive layer
-        this._immersive = makeImmersive(this._state, this._settings);
-        this._immersive.visible = false;
-        this._immersive.opacity = 0;
+        // Immersive layer: grows out of the card, shrinks back into it.
+        this._immersive = makeImmersive(this._state, this._settings, {clock: true});
         this._root.add_child(this._immersive);
         this._root.immersive = this._immersive;
-        const back = new Clutter.ClickGesture();
-        back.connect('may-recognize', () => !pointerOnControl(this._immersive));
-        back.connect('recognize', () => this._setImmersive(false));
-        this._immersive.add_action(back);
+        this._immersive.connect('close-request', () => this._setImmersive(false));
+        this._imP = 0;
+        this._immersive.connect('progress', (v, p) => {
+            this._imP = p;
+            this._applyCard();
+        });
 
-        // Springs for the card ⇄ immersive morph.
-        this._morph = new Spring(0, Presets.bouncy, 0.001);
         this._presence = new Spring(this._state.available ? 1 : 0, Presets.bouncy, 0.002);
         this._ticker = new Ticker(this._root);
         this._ticker.add(dt => this._tick(dt));
@@ -264,7 +186,7 @@ export class LockScreenUI {
     }
 
     // GNOME already shows a small media card in the notifications area; with
-    // Flow's richer card on screen, hide the Spotify one to avoid duplicates.
+    // Flow's richer card on screen, hide the one for the player we follow.
     _hideSystemPlayer(hide) {
         try {
             if (!this._settings.get_boolean('lock-hide-system-player') && hide)
@@ -273,8 +195,8 @@ export class LockScreenUI {
             if (!players)
                 return;
             for (const [player, message] of players) {
-                if (String(player?._busName ?? '').includes('spotify'))
-                    message.visible = !hide;
+                const ours = !!player?._busName && player._busName === this._state.track?.busName;
+                message.visible = !(hide && ours);
             }
             if (hide && !this._hideTimer) {
                 // Players can appear late; re-apply a few times.
@@ -304,13 +226,12 @@ export class LockScreenUI {
         if (on === this._immersiveOn)
             return;
         this._immersiveOn = on;
-        this._morph.target = on ? 1 : 0;
-        if (on) {
-            this._immersive.show();
-            this._immersive.reactive = true;
-        } else {
-            this._immersive.reactive = false;
-        }
+        if (on)
+            this._immersive.present(this._card);
+        else if (byPrompt)
+            this._immersive.hideNow();
+        else
+            this._immersive.dismiss(this._card.visible ? this._card : null);
         // The clock and notifications politely step aside.
         const others = [this._dialog._clock, this._dialog._notificationsBox].filter(Boolean);
         for (const a of others) {
@@ -328,28 +249,24 @@ export class LockScreenUI {
     }
 
     _tick(dt) {
-        let moving = this._morph.step(dt);
-        if (this._presence.step(dt))
-            moving = true;
-        const m = clamp(this._morph.value, -0.1, 1.1);
-        const pres = clamp(this._presence.value, 0, 1.2);
+        const moving = this._presence.step(dt);
+        this._applyCard();
+        return moving;
+    }
 
-        // Card grows & dissolves toward the immersive view…
-        const cs = (0.9 + 0.1 * pres) * (1 + 0.25 * m);
+    // The card hands over to the immersive view: it swells a little and
+    // dissolves in the first third of the expansion, so the gradient
+    // growing out of it reads as the card itself opening up.
+    _applyCard() {
+        const m = clamp(this._imP ?? 0, 0, 1);
+        const pres = clamp(this._presence.value, 0, 1.2);
+        const cs = (0.9 + 0.1 * pres) * (1 + 0.06 * m);
         this._card.set_scale(cs, cs);
-        this._card.opacity = Math.round(255 * clamp(pres, 0, 1) * clamp(1 - m * 1.6, 0, 1));
+        this._card.opacity = Math.round(255 * clamp(pres, 0, 1) * clamp(1 - m / 0.3, 0, 1));
         const vis = this._card.opacity > 0;
         if (vis !== this._card.visible)
             this._card.visible = vis;
         this._card.reactive = !this._immersiveOn && this._state.available;
-
-        // …while the immersive layer settles in from slightly smaller.
-        const is = 0.94 + 0.06 * m;
-        this._immersive.set_scale(is, is);
-        this._immersive.opacity = Math.round(255 * clamp(m, 0, 1));
-        if (!this._immersiveOn && m < 0.01 && !moving)
-            this._immersive.hide();
-        return moving;
     }
 
     _detach() {

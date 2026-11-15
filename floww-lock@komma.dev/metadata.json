@@ -1,9 +1,15 @@
 {
   "uuid": "floww-lock@komma.dev",
   "name": "Floww Lock",
-  "description": "A customizable, macOS-style liquid-glass lock screen: your own clock, wallpaper, fonts, glass and layout, with the Floww Music player built in.",
-  "shell-version": ["50"],
-  "session-modes": ["user", "unlock-dialog"],
+  "description": "A customizable, macOS-style liquid-glass lock screen: your own clock, wallpaper, fonts, glass and layout. With Floww Music installed and enabled, its player and lyrics are built in.\n\nThe unlock-dialog session mode is required because this extension only changes the lock screen. It restyles and re-lays out GNOME's unlock dialog, never replaces the password prompt and never takes keyboard focus, and puts everything back when the screen unlocks or the extension is disabled.",
+  "shell-version": [
+    "50"
+  ],
+  "session-modes": [
+    "user",
+    "unlock-dialog"
+  ],
   "settings-schema": "org.gnome.shell.extensions.floww-lock",
-  "version": 1
+  "version": 1,
+  "url": "https://github.com/Kim-Tsok/floww"
 }

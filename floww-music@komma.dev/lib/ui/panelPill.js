@@ -18,6 +18,7 @@ import {Spring, Ticker, Presets, clamp} from '../anim/spring.js';
 import {lineIndexAt} from '../lyrics/lrc.js';
 import {ArtView, EqBars, Controls, bindState} from './widgets.js';
 import {PlayerCard} from './playerCard.js';
+import {FullscreenLyrics} from './fullscreen.js';
 
 const MAX_TEXT_WIDTH = 380;
 const MAX_TITLE_WIDTH = 160;
@@ -135,6 +136,16 @@ class FlowwMusicIndicator extends PanelMenu.Button {
         this._card = new PlayerCard(state, settings, 'popover');
         this.menu.box.add_child(this._card);
 
+        // ⤢ in the card: lyrics full screen, growing out of the card and
+        // shrinking back into the pill.
+        this._fullscreen = new FullscreenLyrics(state, settings);
+        this._card.connect('expand', () => {
+            // Measure the card while it's still on screen, then let the
+            // popover fold away under the growing view.
+            this._fullscreen.open(this._card, this._pill);
+            this.menu.close();
+        });
+
         // Clicking a pill control must not also toggle the popover.
         this._clickGesture?.connect('may-recognize', () => !this._pointerOnControl());
 
@@ -158,6 +169,7 @@ class FlowwMusicIndicator extends PanelMenu.Button {
         });
         this.connect('destroy', () => {
             settings.disconnect(this._settingsId);
+            this._fullscreen.destroy();
             this._ticker.destroy();
         });
         this._syncVisible(true);
@@ -250,7 +262,7 @@ class FlowwMusicIndicator extends PanelMenu.Button {
                 this._lineIdx = idx;
             const max = this._mode === 'hover' ? MAX_TITLE_WIDTH : MAX_TEXT_WIDTH;
             this._text.setText(text, dir, max);
-            this._width.target = text ? this._text.measure(text, max) + 4 : 0;
+            this._width.target = text ? this._text.measure(text, max) + 1 : 0;
         }
         let moving = this._width.step(dt);
         const w = Math.max(0, this._width.value);

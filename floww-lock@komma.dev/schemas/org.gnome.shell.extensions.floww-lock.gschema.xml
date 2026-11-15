@@ -23,12 +23,20 @@
       <choices><choice value="system"/><choice value="12h"/><choice value="24h"/></choices>
       <default>'system'</default><summary>12 or 24 hour clock</summary>
     </key>
-    <key name="clock-size" type="i"><range min="48" max="260"/><default>128</default><summary>Clock size in pixels</summary></key>
+    <key name="clock-size" type="i"><range min="48" max="260"/><default>116</default><summary>Clock size in pixels</summary></key>
     <key name="clock-weight" type="i"><range min="100" max="900"/><default>600</default><summary>Clock font weight</summary></key>
     <key name="clock-opacity" type="i"><range min="30" max="100"/><default>88</default><summary>Clock opacity, percent</summary></key>
+    <key name="clock-font" type="s">
+      <choices><choice value="apple"/><choice value="glass"/><choice value="sf"/></choices>
+      <default>'apple'</default><summary>Clock lettering: Apple lock screen style, liquid glass, or plain SF</summary>
+    </key>
     <key name="font-family" type="s"><default>'SF Pro Display, Inter Display, Inter, Cantarell, sans-serif'</default><summary>Font for the clock and widgets</summary></key>
 
     <!-- Glass -->
+    <key name="glass-material" type="s">
+      <choices><choice value="liquid"/><choice value="frosted"/><choice value="gradient"/></choices>
+      <default>'liquid'</default><summary>Widget material: liquid glass, frosted glass, or the album colour gradient</summary>
+    </key>
     <key name="glass-tint" type="s"><default>'rgba(255,255,255,0.12)'</default><summary>Glass tint colour (with alpha)</summary></key>
     <key name="glass-blur" type="i"><range min="0" max="80"/><default>28</default><summary>How much the glass blurs what is behind it</summary></key>
     <key name="glass-refraction" type="i"><range min="0" max="100"/><default>55</default><summary>Edge refraction strength</summary></key>
@@ -36,9 +44,10 @@
 
     <!-- Layout -->
     <key name="widget-position" type="s">
-      <choices><choice value="below-clock"/><choice value="left"/><choice value="right"/><choice value="bottom-left"/><choice value="bottom-right"/><choice value="hidden"/></choices>
-      <default>'below-clock'</default><summary>Where the music widget sits</summary>
+      <choices><choice value="bottom-center"/><choice value="below-clock"/><choice value="left"/><choice value="right"/><choice value="bottom-left"/><choice value="bottom-right"/><choice value="hidden"/></choices>
+      <default>'bottom-center'</default><summary>Where the music widget sits</summary>
     </key>
+    <key name="widget-compact" type="b"><default>true</default><summary>Shrink the music widget to a one-line player under the password prompt</summary></key>
     <key name="widget-lyrics" type="b"><default>true</default><summary>Show live lyrics in the music widget</summary></key>
     <key name="prompt-position" type="s">
       <choices><choice value="bottom"/><choice value="center"/></choices>
@@ -48,11 +57,11 @@
     <!-- Notifications -->
     <key name="notifications-mode" type="s">
       <choices><choice value="full"/><choice value="count"/><choice value="hidden"/></choices>
-      <default>'full'</default><summary>Show notifications, only a count, or nothing</summary>
+      <default>'count'</default><summary>Show notifications, only a count, or nothing</summary>
     </key>
     <key name="notifications-position" type="s">
-      <choices><choice value="bottom"/><choice value="below-widget"/><choice value="right"/><choice value="left"/></choices>
-      <default>'below-widget'</default><summary>Where notifications sit</summary>
+      <choices><choice value="below-clock"/><choice value="bottom"/><choice value="below-widget"/><choice value="right"/><choice value="left"/></choices>
+      <default>'below-clock'</default><summary>Where notifications sit</summary>
     </key>
   </schema>
 </schemalist>

@@ -127,8 +127,13 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
         wp.add(sliderRow(s, 'wallpaper-dim', 'Darken', 0, 80));
 
         // Glass
-        const glass = new Adw.PreferencesGroup({title: 'Liquid glass'});
+        const glass = new Adw.PreferencesGroup({title: 'Widgets'});
         look.add(glass);
+        glass.add(choiceRow(s, 'glass-material', 'Material', [
+            ['liquid', 'Liquid glass'],
+            ['frosted', 'Frosted glass'],
+            ['gradient', 'Colour gradient'],
+        ], 'Gradient uses the colours of the album art'));
         const tintRow = new Adw.ActionRow({title: 'Tint', subtitle: 'Colour and strength (alpha) of the glass'});
         const tintBtn = new Gtk.ColorDialogButton({
             dialog: new Gtk.ColorDialog({with_alpha: true, title: 'Glass tint'}),
@@ -167,6 +172,11 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
             ['bottom-left', 'Bottom left'],
             ['bottom-right', 'Bottom right'],
         ]));
+        clock.add(choiceRow(s, 'clock-font', 'Lettering', [
+            ['apple', 'Apple (lock screen style)'],
+            ['glass', 'Liquid glass'],
+            ['sf', 'SF Pro (plain)'],
+        ], 'Apple uses SF Pro Rounded when it is installed'));
         clock.add(choiceRow(s, 'clock-format', 'Format', [
             ['system', 'Follow system'],
             ['12h', '12-hour'],
@@ -191,7 +201,7 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
         clock.add(weightRow);
         clock.add(sliderRow(s, 'clock-opacity', 'Opacity', 30, 100));
 
-        const fontGroup = new Adw.PreferencesGroup({title: 'Font', description: 'Used by the clock and the widgets'});
+        const fontGroup = new Adw.PreferencesGroup({title: 'Font', description: 'Used by the widgets, and by the clock with SF Pro lettering'});
         clockPage.add(fontGroup);
         const fontRow = new Adw.ActionRow({title: 'Font family'});
         const fontBtn = new Gtk.FontDialogButton({
@@ -219,6 +229,7 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
         const widgets = new Adw.PreferencesGroup({title: 'Widgets'});
         layoutPage.add(widgets);
         widgets.add(choiceRow(s, 'widget-position', 'Music widget', [
+            ['bottom-center', 'Bottom centre'],
             ['below-clock', 'Below the clock'],
             ['left', 'Left side'],
             ['right', 'Right side'],
@@ -227,6 +238,8 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
             ['hidden', 'Hidden'],
         ]));
         widgets.add(switchRow(s, 'widget-lyrics', 'Live lyrics in the widget'));
+        widgets.add(switchRow(s, 'widget-compact', 'Fold into a one-line player while unlocking',
+            'The widget shrinks and stays under the password field'));
         widgets.add(choiceRow(s, 'prompt-position', 'Password prompt', [
             ['bottom', 'Bottom (macOS)'],
             ['center', 'Center (GNOME)'],
@@ -240,6 +253,7 @@ export default class FlowwLockPrefs extends ExtensionPreferences {
             ['hidden', 'Nothing'],
         ]));
         notif.add(choiceRow(s, 'notifications-position', 'Position', [
+            ['below-clock', 'Below the clock'],
             ['below-widget', 'Below the widgets'],
             ['bottom', 'Bottom'],
             ['right', 'Right side'],

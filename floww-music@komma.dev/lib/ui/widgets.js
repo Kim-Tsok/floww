@@ -1,6 +1,7 @@
 // Reusable building blocks shared by every surface.
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Graphene from 'gi://Graphene';
@@ -337,10 +338,14 @@ class FlowwMusicScrubber extends St.BoxLayout {
 // ── Transport controls with springy press feedback ──────────────────────
 const ControlButton = GObject.registerClass(
 class FlowwMusicControlButton extends St.Button {
-    _init(iconName, {size = 20, styleClass = 'flow-control', label = null, tooltip = ''} = {}) {
-        const icon = label
-            ? new St.Label({text: label, style_class: 'flow-control-label', y_align: Clutter.ActorAlign.CENTER})
-            : new St.Icon({icon_name: iconName, icon_size: size});
+    _init(iconName, {size = 20, styleClass = 'flow-control', label = null, gicon = null, tooltip = ''} = {}) {
+        let icon;
+        if (label)
+            icon = new St.Label({text: label, style_class: 'flow-control-label', y_align: Clutter.ActorAlign.CENTER});
+        else if (gicon)
+            icon = new St.Icon({gicon, icon_size: size});
+        else
+            icon = new St.Icon({icon_name: iconName, icon_size: size});
         super._init({
             style_class: styleClass,
             child: icon,
@@ -389,14 +394,25 @@ class FlowwMusicControlButton extends St.Button {
     }
 });
 
+// Spotify DJ's mark, shipped as a symbolic icon so it follows the text colour.
+// Made per use, never at import (nothing may be built before enable()).
+export function djIcon() {
+    return new Gio.FileIcon({
+        file: Gio.File.new_for_uri(import.meta.url).get_parent().get_parent().get_parent()
+            .get_child('icons').get_child('spotify-dj-symbolic.svg'),
+    });
+}
+
 const LOOP_ICONS = {
     None: 'media-playlist-repeat-symbolic',
     Playlist: 'media-playlist-repeat-symbolic',
     Track: 'media-playlist-repeat-song-symbolic',
 };
 
-// prev / play / next; `extended` adds shuffle, repeat (off → all → one) and
-// Spotify DJ:  ⤮  ⏮  ⏯  ⏭  ↻  DJ
+// prev / play / next; `extended` adds shuffle, repeat (off → all → one) and,
+// while Spotify's DJ is playing, the DJ mark (click: a new DJ set):
+//   ⤮  ⏮  ⏯  ⏭  ↻  (DJ)
+// Buttons the current player can't honour (other apps) are hidden.
 export const Controls = GObject.registerClass(
 class FlowwMusicControls extends St.BoxLayout {
     _init(state, {size = 20, playSize = 28, extended = false, styleClass = 'flow-controls'} = {}) {
@@ -422,7 +438,9 @@ class FlowwMusicControls extends St.BoxLayout {
             this._loop = new ControlButton(LOOP_ICONS.None, {size: small, styleClass: toggle, tooltip: 'Repeat'});
             this._loop.connect('clicked', () => state.cycleLoop());
             this.add_child(this._loop);
-            this._dj = new ControlButton(null, {label: 'DJ', styleClass: `${toggle} flow-control-dj`, tooltip: 'Spotify DJ'});
+            this._dj = new ControlButton(null, {gicon: djIcon(), size: Math.round(small * 1.25),
+                styleClass: 'flow-control flow-control-dj', tooltip: 'Switch up the DJ'});
+            this._dj.visible = false;
             this._dj.connect('clicked', () => state.startDJ());
             this.add_child(this._dj);
             this._syncOptions();
@@ -431,12 +449,27 @@ class FlowwMusicControls extends St.BoxLayout {
             'playback': () => this._play.setIcon(this._playIcon()),
             'options': () => this._syncOptions(),
             'availability': () => this._syncOptions(),
+            'dj': () => this._syncOptions(),
         });
     }
 
     _syncOptions() {
         if (!this._shuffle)
             return;
+        const st = this._state;
+        this._shuffle.visible = st.hasShuffle ?? true;
+        this._loop.visible = st.hasLoop ?? true;
+        const dj = !!(st.isSpotify && st.djActive);
+        if (dj !== this._dj.visible) {
+            this._dj.visible = dj;
+            if (dj && this.mapped) {
+                // Pops in like a pressed button letting go.
+                this._dj.set_scale(0.4, 0.4);
+                this._dj.opacity = 0;
+                this._dj.ease({opacity: 255, scale_x: 1, scale_y: 1, duration: 420,
+                    mode: Clutter.AnimationMode.EASE_OUT_BACK});
+            }
+        }
         this._shuffle.setActive(this._state.shuffle);
         const loop = this._state.loop;
         this._loop.setActive(loop !== 'None');

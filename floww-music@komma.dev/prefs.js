@@ -6,8 +6,6 @@ import Secret from 'gi://Secret';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-const SECRET_SCHEMA = new Secret.Schema('dev.komma.Flow',
-    Secret.SchemaFlags.NONE, {key: Secret.SchemaAttributeType.STRING});
 
 function switchRow(settings, key, title, subtitle = '') {
     const row = new Adw.SwitchRow({title, subtitle});
@@ -17,6 +15,8 @@ function switchRow(settings, key, title, subtitle = '') {
 
 export default class FlowPrefs extends ExtensionPreferences {
     fillPreferencesWindow(window) {
+        const SECRET_SCHEMA = new Secret.Schema('dev.komma.Flow',
+            Secret.SchemaFlags.NONE, {key: Secret.SchemaAttributeType.STRING});
         const settings = this.getSettings();
         const page = new Adw.PreferencesPage({title: 'Floww Music', icon_name: 'audio-x-generic-symbolic'});
         window.add(page);
@@ -47,7 +47,20 @@ export default class FlowPrefs extends ExtensionPreferences {
         surfaces.add(posRow);
 
         surfaces.add(switchRow(settings, 'lock-enabled', 'Lock screen', 'Card under the clock; click it for immersive lyrics'));
-        surfaces.add(switchRow(settings, 'lock-hide-system-player', "Hide GNOME's Spotify card on the lock screen"));
+        surfaces.add(switchRow(settings, 'lock-hide-system-player', "Hide GNOME's media card on the lock screen"));
+
+        // Source
+        const source = new Adw.PreferencesGroup({title: 'Player'});
+        page.add(source);
+        const sources = ['any', 'spotify'];
+        const sourceRow = new Adw.ComboRow({
+            title: 'Follow',
+            subtitle: 'Any app that plays audio (browsers, Rhythmbox, mpv…) or only Spotify',
+            model: Gtk.StringList.new(['Any media player', 'Spotify only']),
+            selected: Math.max(0, sources.indexOf(settings.get_string('player-source'))),
+        });
+        sourceRow.connect('notify::selected', () => settings.set_string('player-source', sources[sourceRow.selected]));
+        source.add(sourceRow);
 
         // Lyrics
         const lyrics = new Adw.PreferencesGroup({title: 'Lyrics'});
@@ -66,11 +79,14 @@ export default class FlowPrefs extends ExtensionPreferences {
             hasCava
                 ? 'When a song has no lyrics, the expanded player shows bars that follow the actual audio'
                 : 'cava is not installed, so the visualizer is simulated. Install it with: sudo dnf install cava'));
+        lyrics.add(switchRow(settings, 'keep-awake', 'Keep the screen on in full screen',
+            'While lyrics are full screen (from the top bar, or expanded on the lock screen) the screen won\'t dim, blank or lock. Lets go after 10 minutes paused.'));
 
         // Spotify fallback
         const sp = new Adw.PreferencesGroup({
             title: 'Spotify lyrics fallback',
             description: 'Unofficial and may stop working at any time. Used only when LRCLIB has no synced lyrics. ' +
+                'The cookie also lets Floww tell when Spotify\'s DJ is playing, to show the DJ button. ' +
                 'Your sp_dc cookie is stored in the GNOME keyring and is only ever sent to spotify.com.',
         });
         page.add(sp);

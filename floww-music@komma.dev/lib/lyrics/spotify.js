@@ -9,16 +9,27 @@ import Secret from 'gi://Secret';
 import {getJson} from '../http.js';
 import {finalizeLines} from './lrc.js';
 
-export const SECRET_SCHEMA = new Secret.Schema('dev.komma.Flow',
+// Built on first use: nothing may be created at import time.
+let _schema = null;
+function secretSchema() {
+    _schema ??= new Secret.Schema('dev.komma.Flow',
     Secret.SchemaFlags.NONE, {key: Secret.SchemaAttributeType.STRING});
+    return _schema;
+}
 
 const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
 let _token = null; // {value, expires}
 
+// Forget the cached web-player token (on disable).
+export function forgetToken() {
+    _token = null;
+    _schema = null;
+}
+
 function lookupCookie(cancellable) {
     return new Promise(resolve => {
-        Secret.password_lookup(SECRET_SCHEMA, {key: 'sp_dc'}, cancellable, (o, res) => {
+        Secret.password_lookup(secretSchema(), {key: 'sp_dc'}, cancellable, (o, res) => {
             try {
                 resolve(Secret.password_lookup_finish(res));
             } catch {
@@ -28,7 +39,7 @@ function lookupCookie(cancellable) {
     });
 }
 
-async function getToken(cancellable) {
+export async function getToken(cancellable) {
     if (_token && _token.expires > Date.now() + 60_000)
         return _token.value;
     const spDc = await lookupCookie(cancellable);

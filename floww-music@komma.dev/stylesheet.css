@@ -160,7 +160,7 @@
 .flow-pill {
   border-radius: 999px;
   padding: 3px 10px 3px 4px;
-  spacing: 8px;
+  spacing: 6px;
   background-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -204,9 +204,36 @@
 }
 
 .flow-immersive-side {
-  width: 340px;
   spacing: 14px;
 }
+
+.flow-immersive-clock { spacing: 2px; }
+.flow-immersive-clock-time {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.flow-immersive-clock-date {
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.flow-immersive-chrome { spacing: 8px; }
+.flow-immersive-button {
+  color: rgba(255, 255, 255, 0.55);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 10px;
+  transition-duration: 160ms;
+}
+.flow-immersive-button:hover { color: #fff; background-color: rgba(255, 255, 255, 0.18); }
+.flow-immersive-button-on { color: #fff; background-color: rgba(255, 255, 255, 0.22); }
+
+.flow-immersive-viz .flow-visualizer-bar { width: 7px; border-radius: 4px; }
+.flow-immersive-viz .flow-visualizer-bars { spacing: 6px; }
+.flow-immersive-viz .flow-viz-caption { font-size: 14px; }
 
 .flow-art-big {
   border-radius: 18px;
@@ -226,7 +253,7 @@
   padding-bottom: 28px;
 }
 
-/* ── Extended controls: ⤮ ⏮ ⏯ ⏭ ↻ DJ ───────────────────────────────── */
+/* ── Extended controls: ⤮ ⏮ ⏯ ⏭ ↻ (spotify) ─────────────────────────── */
 .flow-controls-extended { spacing: 12px; }
 .flow-immersive .flow-controls-extended { spacing: 12px; }
 
@@ -234,7 +261,30 @@
 .flow-control-toggle:hover { color: rgba(255, 255, 255, 0.75); }
 .flow-control-toggle.flow-control-on { color: #fff; }
 
-.flow-control-dj { padding: 6px 8px; }
+.flow-control-dj { color: rgba(255, 255, 255, 0.85); }
+.flow-control-dj:hover { color: #1ed760; }
+
+/* ── Popover corner: ⋯ (Start DJ) and ⤢ (full screen) ─────────────────── */
+.flow-card-corner { spacing: 4px; padding: 12px 12px 0 0; }
+.flow-card-meta-cornered { padding-right: 60px; }
+.flow-card-corner-button {
+  color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 6px;
+  transition-duration: 160ms;
+}
+.flow-card-corner-button:hover { color: #fff; background-color: rgba(255, 255, 255, 0.2); }
+.flow-card-chip {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  background-color: rgba(30, 215, 96, 0.85);
+  border-radius: 999px;
+  padding: 4px 10px 4px 7px;
+}
+.flow-card-chip:hover { background-color: rgba(30, 215, 96, 1); }
+.flow-card-chip-box { spacing: 6px; }
 .flow-control-label {
   font-size: 11px;
   font-weight: 800;
@@ -244,13 +294,12 @@
 /* Compact controls inside the top bar pill */
 .flow-controls-pill {
   spacing: 1px;
-  padding: 0 0 0 7px;
-  margin-left: 2px;
+  padding: 0 0 0 3px;
+  margin-left: 0;
   border-left: 1px solid rgba(255, 255, 255, 0.22);
 }
 .flow-controls-pill .flow-control { padding: 3px 4px; }
 .flow-controls-pill .flow-control-play { padding: 3px 4px; }
-.flow-controls-pill .flow-control-dj { padding: 2px 4px; }
 .flow-controls-pill .flow-control-label { font-size: 9.5px; }
 
 /* ── Lyrics refresh ───────────────────────────────────────────────────── */

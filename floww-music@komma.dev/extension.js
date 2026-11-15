@@ -16,7 +16,10 @@ import {PlayerState} from './lib/playerState.js';
 import {destroySession} from './lib/http.js';
 import {addIndicator} from './lib/ui/panelPill.js';
 import {DesktopWidget} from './lib/ui/desktopWidget.js';
-import {LockScreenUI, makeImmersive} from './lib/ui/lockScreen.js';
+import {LockScreenUI} from './lib/ui/lockScreen.js';
+import {makeImmersive} from './lib/ui/immersive.js';
+import {releaseAll} from './lib/inhibit.js';
+import {forgetToken} from './lib/lyrics/spotify.js';
 import {PlayerCard} from './lib/ui/playerCard.js';
 import {LyricsView} from './lib/ui/lyricsView.js';
 import {Controls, ArtView, Scrubber, AmbientBackground, SwapLabel, EqBars} from './lib/ui/widgets.js';
@@ -45,7 +48,10 @@ export default class FlowwMusicExtension extends Extension {
             createSwapLabel: opts => new SwapLabel(opts),
             createEqBars: () => new EqBars(state),
             // Full-screen art + lyrics view (the lock screen "immersive" mode).
-            createImmersive: () => makeImmersive(state, settings),
+            // opts: {clock, exitButton, hideCursor, hint}. The view has
+            // present(fromActor) / dismiss(toActor) / hideNow() and emits
+            // 'close-request', 'progress' (0…1) and 'closed'.
+            createImmersive: (opts = {}) => makeImmersive(state, settings, opts),
         };
 
         this._sessionId = Main.sessionMode.connect('updated', () => this._syncMode());
@@ -72,6 +78,8 @@ export default class FlowwMusicExtension extends Extension {
         Main.extensionManager.disconnect(this._extId);
         this._settingIds.forEach(id => this._settings.disconnect(id));
         this._teardown();
+        releaseAll();
+        forgetToken();
         this._state.destroy();
         destroySession();
         this.api = null;

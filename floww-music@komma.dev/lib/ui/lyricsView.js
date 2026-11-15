@@ -27,8 +27,13 @@ import {bindState} from './widgets.js';
 
 const DIM = 0.38;          // inactive line brightness (also the unlit karaoke level)
 const HOVER_DIM = 0.75;
-const INACTIVE_SCALE = 0.965;
-const ACTIVE_SCALE = 1.06;   // the sung line grows a little
+// Text is rendered at the *active* size and only ever scaled down: scaling a
+// label (or the karaoke offscreen buffer) up resamples its glyphs and makes
+// them look soft and pixelated. The sung line sits at exactly 1.0 on whole
+// pixels, so it stays razor sharp.
+const RENDER_SCALE = 1.06;   // the sung line is this much larger than fontSize
+const ACTIVE_SCALE = 1;
+const INACTIVE_SCALE = 0.965 / RENDER_SCALE;
 const STAGGER = 0.045;     // seconds between consecutive lines
 const MAX_STAGGER_LINES = 8;
 const LEAD = 0.18;         // scroll a hair before the line starts
@@ -54,6 +59,17 @@ function utf8Offsets(text) {
     }
     out[text.length] = bytes;
     return out;
+}
+
+// What to say instead of lyrics, or null when there is something to show
+// (or it's still loading). Shared by every surface that swaps the lyrics
+// for a visualizer.
+export function noLyricsCaption(kind) {
+    return {
+        none: 'No lyrics for this song',
+        offline: "Offline — lyrics will load when you're back",
+        instrumental: 'Instrumental',
+    }[kind] ?? null;
 }
 
 // Small, quiet "try again" button for when lyrics couldn't be found.
@@ -123,6 +139,7 @@ class FlowwMusicLyricsView extends St.Widget {
         fade = [0.1, 0.22],
         maxBlur = 4,
         emptyAlign = 'center',
+        autoScrollPlain = false, // unsynced lyrics follow the song's progress
     } = {}) {
         super._init({
             style_class: styleClass,
@@ -139,6 +156,7 @@ class FlowwMusicLyricsView extends St.Widget {
         this._interactive = interactive;
         this._maxBlur = maxBlur;
         this._emptyAlign = emptyAlign;
+        this._autoPlain = autoScrollPlain;
 
         this._items = [];
         this._active = -2;
@@ -218,7 +236,7 @@ class FlowwMusicLyricsView extends St.Widget {
     }
 
     _lineStyle() {
-        return `font-size: ${this._fontSize}px;`;
+        return `font-size: ${Math.round(this._fontSize * RENDER_SCALE)}px;`;
     }
 
     _makeLine(text, line, plain = false) {
@@ -588,11 +606,11 @@ class FlowwMusicLyricsView extends St.Widget {
                 const e = Math.max(0, it.expand.value);
                 y += (it.height + gap) * e;
             } else {
-                // Lines scale around their vertical centre; make room above
-                // and below as they grow so neighbours never overlap.
-                const grow = Math.max(0, it.scale.value - 1) * it.height / 2;
-                ys[i] = y + grow;
-                y += it.height + gap + grow * 2;
+                // Lines scale around their vertical centre; reserve exactly
+                // their visible height so neighbours never overlap or drift.
+                const vis = it.height * Math.max(0, it.scale.value);
+                ys[i] = y - (it.height - vis) / 2;
+                y += vis + gap;
             }
         }
         return ys;
@@ -600,8 +618,18 @@ class FlowwMusicLyricsView extends St.Widget {
 
     _targetScroll(ys = this._baseYs()) {
         const [, h] = this.get_size();
-        if (this._kind === 'plain')
-            return -h * 0.08 + this._userOffset.value;
+        if (this._kind === 'plain') {
+            let auto = 0;
+            if (this._autoPlain && this._state.duration > 0) {
+                // Read along: the page drifts through the song, keeping
+                // roughly where the singer should be a third of the way down.
+                const last = this._items.length - 1;
+                const total = (ys[last] ?? 0) + (this._items[last]?.height ?? 0);
+                const frac = clamp(this._state.position() / this._state.duration, 0, 1);
+                auto = Math.max(0, total - h * 0.6) * frac;
+            }
+            return -h * 0.08 + auto + this._userOffset.value;
+        }
         const idx = Math.max(0, this._active);
         const base = ys[idx] ?? 0;
         return base - h * this._anchor + this._userOffset.value;
@@ -688,7 +716,8 @@ class FlowwMusicLyricsView extends St.Widget {
                 if (s.step(dt))
                     moving = true;
             }
-            it.actor.set_position(padX, Math.round(y * 2) / 2 + (1 - enter) * 22);
+            // Whole pixels only: half-pixel offsets smear the glyphs.
+            it.actor.set_position(Math.round(padX), Math.round(y + (1 - enter) * 22));
             it.actor.opacity = Math.round(255 * clamp(it.opacity.value, 0, 1) * enter);
             it.actor.set_scale(it.scale.value, it.scale.value);
             const r = onScreen ? Math.round(it.blurR.value) : 0;
@@ -704,6 +733,8 @@ class FlowwMusicLyricsView extends St.Widget {
             if (this._state.playing)
                 moving = true;
         }
+        if (this._autoPlain && this._kind === 'plain' && this._state.playing)
+            moving = true;
         return moving;
     }
 

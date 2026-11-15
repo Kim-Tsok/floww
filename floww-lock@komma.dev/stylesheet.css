@@ -16,6 +16,25 @@
   box-shadow: 0 18px 48px 0 rgba(0, 0, 0, 0.22);
 }
 
+/* Frosted: a softer, wider shadow; gradient: a deeper one. */
+.floww-glass.floww-frosted { box-shadow: 0 14px 40px 0 rgba(0, 0, 0, 0.18); }
+.floww-glass.floww-gradient { box-shadow: 0 20px 56px 0 rgba(0, 0, 0, 0.32); }
+/* The album-colour shader paints over an opaque base. */
+.floww-ambient-fill { background-color: #000; }
+.floww-gradient-fill {
+  background-gradient-direction: vertical;
+  background-gradient-start: rgba(92, 88, 120, 0.92);
+  background-gradient-end: rgba(36, 34, 52, 0.92);
+}
+
+/* ── Hint ("click or press a key to unlock") ─────────────────────────── */
+.floww-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+}
+
 /* ── Music widget ────────────────────────────────────────────────────── */
 .floww-music-content {
   padding: 18px 18px 8px 18px;
@@ -40,6 +59,22 @@
 .floww-music-controls { spacing: 10px; }
 .floww-music .flow-scrubber-track { background-color: rgba(255, 255, 255, 0.25); }
 .floww-music .flow-lyric-text { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.15); }
+
+/* Compact, one-line player (while the password prompt is up). */
+.floww-music-compact {
+  padding: 10px 10px 10px 12px;
+  spacing: 12px;
+  color: #fff;
+}
+.floww-music-art-small { border-radius: 8px; box-shadow: 0 3px 10px 0 rgba(0, 0, 0, 0.28); }
+.floww-music-line {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+.floww-music-compact-controls { spacing: 2px; padding: 0; }
+.floww-music-compact-controls .flow-control { padding: 7px; }
+.floww-music-compact-controls .flow-control-play { padding: 7px; }
 
 /* ── Notification count pill ─────────────────────────────────────────── */
 .floww-count-row {
@@ -69,6 +104,16 @@
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* A smaller avatar above the password field (GNOME uses 160px). */
+.floww-lock .user-widget.vertical { spacing: 12px; }
+.floww-lock .user-widget.vertical .user-icon { icon-size: 84px; }
+.floww-lock .user-widget.vertical .user-icon StIcon { padding: 16px; }
+.floww-lock .user-widget.vertical .user-widget-label {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin-bottom: 0.4em;
+}
+
 /* Password field as a frosted pill. */
 .floww-lock StPasswordEntry,
 .floww-lock .login-dialog-prompt-entry {
@@ -77,6 +122,7 @@
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #fff;
   padding: 8px 16px;
+  transition-duration: 200ms;
 }
 .floww-lock StPasswordEntry:focus,
 .floww-lock .login-dialog-prompt-entry:focus {

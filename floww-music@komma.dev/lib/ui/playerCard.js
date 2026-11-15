@@ -2,17 +2,18 @@
 // top bar popover and the lock screen.
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import {Spring, Ticker, Presets, clamp} from '../anim/spring.js';
-import {AmbientBackground, ArtView, SwapLabel, Scrubber, Controls, bindState} from './widgets.js';
-import {LyricsView, makeRefreshButton} from './lyricsView.js';
+import {AmbientBackground, ArtView, SwapLabel, Scrubber, Controls, bindState, djIcon} from './widgets.js';
+import {LyricsView, makeRefreshButton, noLyricsCaption} from './lyricsView.js';
 import {Visualizer} from './visualizer.js';
 
 const VARIANTS = {
     widget: {width: 360, art: 64, radius: 12, lyricsHeight: 236, font: 21, anchor: 0.26},
-    popover: {width: 400, art: 72, radius: 12, lyricsHeight: 300, font: 23, anchor: 0.28, visualizer: true},
+    popover: {width: 400, art: 72, radius: 12, lyricsHeight: 300, font: 23, anchor: 0.28, visualizer: true, corner: true},
     lock: {width: 460, art: 64, radius: 12, lyricsHeight: 132, font: 21, anchor: 0.22},
 };
 
@@ -20,7 +21,7 @@ const VIZ_BARS_HEIGHT = 64;
 const VIZ_AREA_HEIGHT = 112;
 
 export const PlayerCard = GObject.registerClass({
-    Signals: {'activate-lyrics': {}},
+    Signals: {'activate-lyrics': {}, 'expand': {}},
 }, class FlowwMusicPlayerCard extends St.Widget {
     _init(state, settings, variant = 'widget') {
         const v = VARIANTS[variant];
@@ -113,6 +114,11 @@ export const PlayerCard = GObject.registerClass({
             this.connect('destroy', () => this._ticker.destroy());
         }
 
+        if (v.corner) {
+            meta.add_style_class_name('flow-card-meta-cornered');
+            this.add_child(this._buildCorner());
+        }
+
         bindState(this, state, {
             'track': () => this._sync(true),
             'lyrics': () => this._syncMode(),
@@ -128,13 +134,10 @@ export const PlayerCard = GObject.registerClass({
         const kind = this._state.lyrics.kind;
         if (kind === 'loading')
             return; // keep whatever is showing until we know
-        const viz = ['none', 'offline', 'instrumental'].includes(kind) && this._state.available;
+        const caption = this._state.available ? noLyricsCaption(kind) : null;
+        const viz = !!caption;
         if (viz) {
-            this._vizCaption.text = {
-                none: 'No lyrics for this song',
-                offline: "Offline — lyrics will load when you're back",
-                instrumental: 'Instrumental',
-            }[kind];
+            this._vizCaption.text = caption;
             this._vizRefresh.visible = kind !== 'instrumental';
         }
         const mode = viz ? 'viz' : 'lyrics';
@@ -164,6 +167,94 @@ export const PlayerCard = GObject.registerClass({
         return moving;
     }
 
+    // Top right: ⋯ (Start Spotify DJ, when it isn't on) and ⤢ (full screen).
+    _buildCorner() {
+        const corner = new St.BoxLayout({
+            style_class: 'flow-card-corner',
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.START,
+        });
+        const button = (icon, label) => new St.Button({
+            style_class: 'flow-card-corner-button',
+            child: new St.Icon({icon_name: icon, icon_size: 14}),
+            accessible_name: label,
+            can_focus: true,
+            track_hover: true,
+        });
+
+        // "Start DJ" chip that slides out of the ⋯ button.
+        this._djChip = new St.Button({
+            style_class: 'flow-card-chip',
+            can_focus: true,
+            track_hover: true,
+            visible: false,
+            opacity: 0,
+            accessible_name: 'Start Spotify DJ',
+        });
+        const chipBox = new St.BoxLayout({style_class: 'flow-card-chip-box'});
+        chipBox.add_child(new St.Icon({gicon: djIcon(), icon_size: 16}));
+        chipBox.add_child(new St.Label({text: 'Start DJ', y_align: Clutter.ActorAlign.CENTER}));
+        this._djChip.set_child(chipBox);
+        this._djChip.connect('clicked', () => {
+            this._state.startDJ();
+            this._setChip(false);
+        });
+        this._more = button('view-more-horizontal-symbolic', 'More');
+        this._more.connect('clicked', () => this._setChip(!this._chipOpen));
+        const expand = button('view-fullscreen-symbolic', 'Full screen lyrics');
+        expand.connect('clicked', () => this.emit('expand'));
+
+        corner.add_child(this._djChip);
+        corner.add_child(this._more);
+        corner.add_child(expand);
+
+        const sync = () => {
+            const can = !!(this._state.isSpotify && !this._state.djActive);
+            this._more.visible = can;
+            if (!can)
+                this._setChip(false);
+        };
+        bindState(corner, this._state, {'dj': sync, 'availability': sync, 'track': sync});
+        sync();
+        corner.connect('destroy', () => {
+            if (this._chipTimer)
+                GLib.source_remove(this._chipTimer);
+            this._chipTimer = 0;
+        });
+        return corner;
+    }
+
+    _setChip(open) {
+        if (!this._djChip || open === !!this._chipOpen)
+            return;
+        this._chipOpen = open;
+        if (this._chipTimer)
+            GLib.source_remove(this._chipTimer);
+        this._chipTimer = 0;
+        const chip = this._djChip;
+        chip.remove_all_transitions();
+        if (open) {
+            chip.show();
+            chip.translation_x = 12;
+            chip.ease({opacity: 255, translation_x: 0, duration: 260,
+                mode: Clutter.AnimationMode.EASE_OUT_QUINT});
+            this._chipTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+                this._chipTimer = 0;
+                this._setChip(false);
+                return GLib.SOURCE_REMOVE;
+            });
+        } else {
+            chip.ease({opacity: 0, translation_x: 12, duration: 180,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+                onStopped: () => {
+                    if (!this._chipOpen)
+                        chip.hide();
+                }});
+        }
+    }
+
     get lyricsView() {
         return this._lyrics;
     }
@@ -171,6 +262,6 @@ export const PlayerCard = GObject.registerClass({
     _sync(animate) {
         const t = this._state.track;
         this._title.setText(t?.title ?? 'Not playing', animate);
-        this._artist.setText(t?.artist ?? 'Spotify', animate);
+        this._artist.setText(t?.artist ?? '', animate);
     }
 });

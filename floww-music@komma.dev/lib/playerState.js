@@ -1,7 +1,7 @@
 // Single source of truth shared by every Flow surface.
 //
 // Signals:
-//   'availability'  Spotify appeared/vanished
+//   'availability'  a player appeared/vanished (or the active one changed)
 //   'track'         new track metadata
 //   'playback'      playing/paused
 //   'seeked'        position jumped (seek, skip, resync)
@@ -9,12 +9,14 @@
 //   'art'           album art + palette ready
 //   'heartbeat'     once a second while playing
 //   'options'       shuffle / repeat changed
+//   'dj'            Spotify's DJ started or stopped (see `djActive`)
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
-import {SpotifyMpris} from './mpris.js';
+import {MprisClient} from './mpris.js';
+import {DjWatcher} from './spotifyDj.js';
 import {LyricsProvider, isOffline} from './lyrics/provider.js';
 import {fetchArt, cachedArt, artSteps, extractPalette, DEFAULT_PALETTE} from './art.js';
 
@@ -79,9 +81,11 @@ export class PlayerState extends EventEmitter {
         this._artCancellable = null;
         this._pendingOptions = {};
 
-        this._mpris = new SpotifyMpris();
+        this._dj = new DjWatcher(DJ_URI, () => this.emit('dj'));
+        this._mpris = new MprisClient(settings);
         this._mpris.connect('appeared', () => this._onAppeared());
         this._mpris.connect('vanished', () => this._onVanished());
+        this._mpris.connect('switched', () => this._onSwitched());
         this._mpris.connect('metadata', () => this._onMetadata());
         this._mpris.connect('status', () => this._onStatus());
         this._mpris.connect('seeked', (o, pos) => {
@@ -120,6 +124,19 @@ export class PlayerState extends EventEmitter {
 
     get canSeek() {
         return this._mpris.canSeek;
+    }
+
+    // The active player is Spotify (DJ, ads, Spotify lyrics apply).
+    get isSpotify() {
+        return this._mpris.isSpotify;
+    }
+
+    get hasShuffle() {
+        return this._mpris.hasShuffle;
+    }
+
+    get hasLoop() {
+        return this._mpris.hasLoop;
     }
 
     // Current position in seconds, including the user's lyric offset.
@@ -170,8 +187,18 @@ export class PlayerState extends EventEmitter {
         this.emit('options');
     }
 
+    // Spotify's DJ is what's playing (best effort, see spotifyDj.js).
+    get djActive() {
+        return this._mpris.isSpotify && this._dj.active;
+    }
+
+    // Starts the DJ, or, when it's already on, asks it for a new set
+    // (what Spotify's own DJ button does).
     startDJ() {
+        if (!this._mpris.isSpotify)
+            return;
         this._mpris.openUri(DJ_URI);
+        this._dj.markStarted();
     }
 
     // Manual "try again" from the UI (also used after reconnecting).
@@ -201,8 +228,20 @@ export class PlayerState extends EventEmitter {
         this._startSync();
     }
 
+    // Another player took over: re-read everything from it.
+    _onSwitched() {
+        this._pendingOptions = {};
+        this._dj.reset();
+        this._onMetadata();
+        this._onStatus();
+        this.emit('options');
+        this.emit('availability');
+        this._resync();
+    }
+
     _onVanished() {
         this._stopSync();
+        this._dj.reset();
         this._trackCancellable?.cancel();
         this._artCancellable?.cancel();
         this.track = null;
@@ -213,6 +252,8 @@ export class PlayerState extends EventEmitter {
     }
 
     _onStatus() {
+        if (this._mpris.playbackStatus === 'Stopped')
+            this._dj.reset();
         const playing = this._mpris.playing;
         if (playing === this.playing)
             return;
@@ -255,7 +296,9 @@ export class PlayerState extends EventEmitter {
         if (artChanged)
             this._loadArt(md);
         this._loadLyrics(md, this._trackCancellable);
-        // Spotify updates position a beat after metadata.
+        if (md.isSpotify)
+            this._dj.check();
+        // Players update the position a beat after metadata.
         this._resyncSoon(250);
     }
 
@@ -380,6 +423,7 @@ export class PlayerState extends EventEmitter {
             GLib.source_remove(this._netRetryId);
         this._trackCancellable?.cancel();
         this._artCancellable?.cancel();
+        this._dj.destroy();
         this._mpris.destroy();
         this.disconnectAll?.();
     }

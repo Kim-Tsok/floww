@@ -1,9 +1,15 @@
 {
   "uuid": "floww-music@komma.dev",
   "name": "Floww Music",
-  "description": "Spotify now playing with Apple Music–style synced lyrics: a desktop widget, an adaptive top bar pill, and a lock screen card that expands into immersive lyrics.",
-  "shell-version": ["50"],
-  "session-modes": ["user", "unlock-dialog"],
+  "description": "Now playing with Apple Music–style synced lyrics for Spotify and other MPRIS players: a desktop widget, an adaptive top bar pill, full screen lyrics that can keep the screen on, and a lock screen card that expands into immersive lyrics.\n\nLyrics come from LRCLIB. An optional, off-by-default Spotify lyrics fallback uses an sp_dc cookie that you paste in yourself; it is stored in the GNOME keyring and only sent to spotify.com.\n\nThe unlock-dialog session mode is used to show the player and its controls on the lock screen. It never takes keyboard focus, so typing still goes straight to the password prompt.",
+  "shell-version": [
+    "50"
+  ],
+  "session-modes": [
+    "user",
+    "unlock-dialog"
+  ],
   "settings-schema": "org.gnome.shell.extensions.floww-music",
-  "version": 1
+  "version": 1,
+  "url": "https://github.com/Kim-Tsok/floww"
 }

@@ -130,7 +130,7 @@ export class LyricsProvider {
                 console.debug(`Floww Music: LRCLIB failed: ${e.message}`);
             }
 
-            if (!expired && result?.kind !== 'synced' && this._settings.get_boolean('spotify-fallback')) {
+            if (!expired && track.isSpotify && result?.kind !== 'synced' && this._settings.get_boolean('spotify-fallback')) {
                 const sp = await fetchSpotify(track, budget);
                 if (sp && (sp.kind === 'synced' || !result))
                     result = sp;

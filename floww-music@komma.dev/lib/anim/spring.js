@@ -159,8 +159,9 @@ export class Ticker {
                 logError(e, 'Flow ticker');
             }
         }
+        // A callback may have destroyed us (and our actor) this frame.
         if (!alive)
-            this._timeline.stop();
+            this._timeline?.stop();
     }
 
     destroy() {

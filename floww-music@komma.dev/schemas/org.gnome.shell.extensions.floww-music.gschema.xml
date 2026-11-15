@@ -12,10 +12,15 @@
     </key>
     <key name="panel-lyrics" type="b"><default>true</default><summary>Show the live lyric line in the top bar</summary></key>
     <key name="lock-enabled" type="b"><default>true</default><summary>Show on the lock screen</summary></key>
-    <key name="lock-hide-system-player" type="b"><default>true</default><summary>Hide GNOME's own Spotify media card on the lock screen</summary></key>
+    <key name="lock-hide-system-player" type="b"><default>true</default><summary>Hide GNOME's own media card for the current player on the lock screen</summary></key>
+    <key name="player-source" type="s">
+      <choices><choice value="any"/><choice value="spotify"/></choices>
+      <default>'any'</default><summary>Follow any media player (browsers, Rhythmbox, mpv…) or only Spotify</summary>
+    </key>
     <key name="blur-lyrics" type="b"><default>true</default><summary>Blur lyric lines away from the current one</summary></key>
     <key name="lyrics-offset-ms" type="i"><range min="-3000" max="3000"/><default>0</default><summary>Lyrics timing offset in milliseconds</summary></key>
     <key name="spotify-fallback" type="b"><default>false</default><summary>Use Spotify's unofficial lyrics endpoint when LRCLIB has nothing</summary></key>
     <key name="visualizer-cava" type="b"><default>true</default><summary>Use cava for a live audio visualizer when there are no lyrics</summary></key>
+    <key name="keep-awake" type="b"><default>true</default><summary>Keep the screen on while lyrics are full screen</summary></key>
   </schema>
 </schemalist>

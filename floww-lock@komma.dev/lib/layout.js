@@ -2,13 +2,27 @@
 // It only decides *where* things go; GNOME still owns the password prompt,
 // authentication and the clock ⇄ prompt transition.
 //
-// Items: GNOME's stack (password prompt + "click to unlock" hint), GNOME's
-// notification list, the switch-user button, and ours: clock, music widget,
-// notification count pill, immersive lyrics layer.
+// Default arrangement (macOS / iOS):
+//
+//            Saturday, November 15
+//                   9:41
+//             [ 🔔 3 notifications ]
+//
+//
+//          ┌──────── music ────────┐
+//          └───────────────────────┘
+//        Click or press a key to unlock
+//
+// While the password prompt is up, the music widget folds into a one-line
+// player at the bottom and the prompt sits right above it. Everything is a
+// continuous function of the prompt progress and the widget's morph, so
+// nothing ever jumps.
 
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
+
+import {lerp} from './motion.js';
 
 const MARGIN = 56;
 const GAP = 28;
@@ -37,7 +51,8 @@ export const FlowwLockLayout = GObject.registerClass(
 class FlowwLockLayout extends Clutter.LayoutManager {
     _init(items, settings) {
         super._init();
-        this._i = items; // {stack, notifications, userButton, clock, music, count, immersive}
+        // {stack, hint, notifications, userButton, clock, music, count, immersive, adjustment}
+        this._i = items;
         this._settings = settings;
         this.notifMode = settings.get_string('notifications-mode'); // full | count | hidden
     }
@@ -55,108 +70,159 @@ class FlowwLockLayout extends Clutter.LayoutManager {
         const [W, H] = box.get_size();
         const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const M = MARGIN * scale, G = GAP * scale;
-        const {stack, notifications, userButton, clock, music, count, immersive} = this._i;
+        const {stack, hint, notifications, userButton, clock, music, count, immersive, adjustment} = this._i;
+        const p = Math.min(1, Math.max(0, adjustment?.value ?? 0)); // 0 clock … 1 prompt
 
-        // ── Password prompt / hint ─────────────────────────────────────
-        const [stackW, stackH] = natural(stack);
+        const wpos = s.get_string('widget-position');
+        const musicOn = !!music?.visible && wpos !== 'hidden';
+        const m = musicOn ? music.morph : 0; // 0 full … 1 compact
+        const compactOn = musicOn && s.get_boolean('widget-compact');
         const promptBottom = s.get_string('prompt-position') === 'bottom';
-        const stackY = promptBottom ? H - stackH - M * 0.6 : Math.round(H / 3);
+
+        // ── Music widget size + its compact slot (bottom centre) ───────
+        const [mw, mh] = musicOn ? natural(music) : [0, 0];
+        const bottomPad = M * 0.55;
+        const compactBox = {x: (W - mw) / 2, y: H - bottomPad - mh};
+
+        // ── Hint ("click or press a key") and password prompt ──────────
+        // The hint (ours; GNOME's is kept invisible) sits at the very
+        // bottom. The prompt rises from there to just above the compact
+        // player (or to the upper third in GNOME's position).
+        const [hw, hh] = natural(hint);
+        const hintBottom = H - M * 0.4;
+        if (hint)
+            place(hint, (W - hw) / 2, hintBottom - hh, hw, hh);
+        const [stackW, stackH] = natural(stack);
+        let promptY;
+        if (!promptBottom)
+            promptY = Math.round(H / 3);
+        else if (compactOn)
+            promptY = compactBox.y - G * 0.9 - stackH;
+        else
+            promptY = H - stackH - M * 0.6;
+        const stackY = lerp(Math.max(promptY, hintBottom - stackH), promptY, p);
         place(stack, (W - stackW) / 2, stackY, stackW, stackH);
-        const floor = promptBottom ? stackY - G : H - M; // nothing goes below this
+
+        // Space left at the bottom for everything else.
+        const bottomTop = Math.min(
+            hintBottom - hh - G * 0.6,
+            p > 0 && !compactOn ? stackY - G * 0.6 : Infinity);
 
         // ── Clock ───────────────────────────────────────────────────────
         const cpos = s.get_string('clock-position');
         const [cw, ch] = natural(clock);
-        let cx = (W - cw) / 2, cy = M * 1.1;
+        const top = Math.max(M * 1.5, H * 0.085);
+        let cx = (W - cw) / 2, cy = top;
         if (cpos.endsWith('left'))
             cx = M;
         else if (cpos.endsWith('right'))
             cx = W - cw - M;
         if (cpos === 'center')
-            cy = (H - ch) / 2 - H * 0.08;
+            cy = (H - ch) / 2 - H * 0.1;
         else if (cpos.startsWith('bottom'))
-            cy = floor - ch;
+            cy = bottomTop - ch - (musicOn && wpos === 'bottom-center' ? mh + G : 0);
         if (clock)
             place(clock, cx, cy, cw, ch);
+        const alignX = w => (cpos.endsWith('left') ? cx
+            : cpos.endsWith('right') ? cx + cw - w : (W - w) / 2);
+        let underClock = cy + ch + G * 0.55; // next free spot under the clock
 
-        // ── Music widget ────────────────────────────────────────────────
-        const wpos = s.get_string('widget-position');
-        let mBox = null;
-        if (music) {
-            const [mw, mh] = natural(music);
-            let mx, my;
-            switch (wpos) {
-            case 'left':
-                mx = M; my = (H - mh) / 2;
-                break;
-            case 'right':
-                mx = W - mw - M; my = (H - mh) / 2;
-                break;
-            case 'bottom-left':
-                mx = M; my = floor - mh;
-                break;
-            case 'bottom-right':
-                mx = W - mw - M; my = floor - mh;
-                break;
-            default: { // below-clock, aligned like the clock
-                mx = cpos.endsWith('left') ? cx
-                    : cpos.endsWith('right') ? cx + cw - mw : (W - mw) / 2;
-                my = cpos.startsWith('bottom') ? cy - G - mh : cy + ch + G;
-            }
-            }
-            if (wpos === 'hidden') {
-                place(music, 0, 0, 0, 0);
-            } else {
-                my = Math.max(M * 0.5, Math.min(my, floor - mh));
-                place(music, mx, my, mw, mh);
-                mBox = {x: mx, y: my, w: mw, h: mh};
-            }
-        }
-
-        // ── Notifications (full list or count pill) ─────────────────────
+        // ── Notification count pill (under the clock by default) ───────
         const mode = this.notifMode;
         const npos = s.get_string('notifications-position');
         const colW = Math.max(stackW, 400 * scale);
-        const target = mode === 'hidden' ? null : mode === 'count' ? count : notifications;
-        const other = mode === 'count' ? notifications : count;
-        if (mode === 'hidden')
+        if (count) {
+            const [pw, ph] = natural(count);
+            if (mode === 'count' && count.visible) {
+                let px = alignX(pw), py = underClock;
+                if (npos === 'right' || npos === 'left') {
+                    px = npos === 'right' ? W - pw - M : M;
+                    py = (H - ph) / 2;
+                } else if (npos === 'bottom') {
+                    py = bottomTop - ph - (musicOn && wpos === 'bottom-center' ? mh + G : 0);
+                }
+                place(count, px, py, pw, ph);
+                if (npos === 'below-clock')
+                    underClock = py + ph + G;
+            } else {
+                place(count, alignX(pw), underClock, pw, ph);
+            }
+        }
+
+        // ── Music widget (full position ↔ compact slot) ────────────────
+        let mBox = null;
+        if (music) {
+            let fx, fy;
+            switch (wpos) {
+            case 'left':
+                fx = M; fy = (H - mh) / 2;
+                break;
+            case 'right':
+                fx = W - mw - M; fy = (H - mh) / 2;
+                break;
+            case 'bottom-left':
+                fx = M; fy = bottomTop - mh;
+                break;
+            case 'bottom-right':
+                fx = W - mw - M; fy = bottomTop - mh;
+                break;
+            case 'below-clock':
+                fx = alignX(mw);
+                fy = cpos.startsWith('bottom') ? cy - G - mh : underClock;
+                break;
+            default: // bottom-center
+                fx = (W - mw) / 2; fy = bottomTop - mh;
+            }
+            if (!musicOn) {
+                place(music, fx ?? 0, fy ?? 0, mw, mh);
+            } else {
+                fy = Math.max(M * 0.5, fy);
+                const k = compactOn ? Math.min(1.05, Math.max(-0.05, m)) : 0;
+                const x = lerp(fx, compactBox.x, k), y = lerp(fy, compactBox.y, k);
+                place(music, x, y, mw, mh);
+                mBox = {x: fx, y: fy, w: mw, h: mh};
+                if (wpos === 'below-clock')
+                    underClock = fy + mh + G;
+            }
+        }
+
+        // ── Notification list ───────────────────────────────────────────
+        const floor = Math.min(bottomTop,
+            mBox && wpos === 'bottom-center' ? mBox.y - G : Infinity,
+            p > 0 ? stackY - G * 0.6 : Infinity);
+        if (mode !== 'full') {
             place(notifications, 0, 0, 0, 0);
-        if (other)
-            place(other, 0, 0, 0, 0);
-        if (target) {
-            let [nw, nh] = natural(target, colW);
-            if (target === notifications)
-                nw = colW;
+        } else {
+            let [, nh] = natural(notifications, colW);
+            const nw = colW;
             let nx = (W - nw) / 2, ny, maxH;
             if (npos === 'right' || npos === 'left') {
                 nx = npos === 'right' ? W - nw - M : M;
                 maxH = floor - M * 2;
                 nh = Math.min(nh, maxH);
                 ny = (H - nh) / 2;
-            } else if (npos === 'below-widget') {
-                const top = mBox && wpos === 'below-clock'
-                    ? mBox.y + mBox.h + G
-                    : cpos === 'top' ? cy + ch + G : H * 0.45;
-                maxH = Math.max(0, floor - top);
-                nh = Math.min(nh, maxH);
-                ny = top;
-            } else { // bottom: grows upwards from the prompt / screen edge
+            } else if (npos === 'bottom') {
                 maxH = Math.max(0, floor - H * 0.35);
                 nh = Math.min(nh, maxH);
                 ny = floor - nh;
+            } else { // below-clock / below-widget
+                const startY = npos === 'below-widget' && mBox && wpos !== 'bottom-center'
+                    ? mBox.y + mBox.h + G : underClock;
+                maxH = Math.max(0, floor - startY);
+                nh = Math.min(nh, maxH);
+                ny = startY;
             }
-            // No room (e.g. the prompt is up below the widgets): tuck it
-            // away rather than show a sliver with a scrollbar.
-            if (nh < 64 * scale && target === notifications)
-                place(target, 0, 0, 0, 0);
+            // No room: tuck it away rather than show a sliver with a scrollbar.
+            if (nh < 64 * scale)
+                place(notifications, 0, 0, 0, 0);
             else
-                place(target, nx, ny, nw, nh);
+                place(notifications, nx, ny, nw, nh);
         }
 
         // ── Switch-user button (GNOME's spot) ───────────────────────────
         if (userButton?.visible) {
             const [uw, uh] = natural(userButton);
-            place(userButton, W - uw * 2, H - uh * 2, uw, uh);
+            place(userButton, W - uw - M * 0.5, H - uh - M * 0.4, uw, uh);
         } else if (userButton) {
             place(userButton, 0, 0, 0, 0);
         }

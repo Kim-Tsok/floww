@@ -74,6 +74,12 @@ export default class FlowwMusicExtension extends Extension {
     }
 
     disable() {
+        // This extension uses the 'unlock-dialog' session mode to show the
+        // player and its controls on the lock screen (when Floww Lock isn't
+        // doing it), so it stays enabled while the screen is locked.
+        // disable() therefore runs on a real disable, uninstall or logout,
+        // and tears down everything built for either the desktop or the
+        // lock screen.
         Main.sessionMode.disconnect(this._sessionId);
         Main.extensionManager.disconnect(this._extId);
         this._settingIds.forEach(id => this._settings.disconnect(id));

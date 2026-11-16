@@ -118,6 +118,17 @@ export class PlayerState extends EventEmitter {
         });
     }
 
+    // Floww Lock holds handlers on this state. When both extensions are
+    // disabled, ours can go first (destroy() drops every handler), so their
+    // later disconnects must be harmless.
+    disconnect(id) {
+        try {
+            super.disconnect(id);
+        } catch {
+            // already gone with destroy()
+        }
+    }
+
     get available() {
         return this._mpris.available && this.track !== null;
     }

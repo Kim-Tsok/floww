@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="#2B63D9"/>
+  <!-- shackle -->
+  <path d="M176 236 V178 a80 80 0 0 1 160 0 V236" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/>
+  <!-- body -->
+  <rect x="120" y="226" width="272" height="196" rx="56" fill="#fff"/>
+  <!-- the Floww lyric wave inside the lock -->
+  <g fill="none" stroke="#2B63D9" stroke-linecap="round">
+    <path d="M168 300 C206 278 236 322 274 300 S328 284 346 294" stroke-width="22"/>
+    <path d="M176 360 C206 346 232 374 262 360" stroke-width="13" stroke-opacity="0.5"/>
+  </g>
+  <g fill="#2B63D9">
+    <circle cx="292" cy="360" r="7" fill-opacity="0.7"/>
+    <circle cx="316" cy="360" r="7" fill-opacity="0.45"/>
+  </g>
+</svg>

@@ -22,6 +22,11 @@ export default class FlowwLockExtension extends Extension {
     }
 
     disable() {
+        // This extension uses the 'unlock-dialog' session mode because it
+        // only changes the lock screen, so it must stay enabled while the
+        // screen is locked. disable() therefore runs on a real disable,
+        // uninstall or logout, and puts GNOME's unlock dialog back exactly
+        // as it was.
         Main.sessionMode.disconnect(this._sessionId);
         Main.extensionManager.disconnect(this._extId);
         this._ui?.destroy();

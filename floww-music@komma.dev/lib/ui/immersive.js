@@ -103,12 +103,19 @@ class FlowwMusicImmersiveClock extends St.BoxLayout {
         this._wall = new GnomeDesktop.WallClock({time_only: true});
         this._wallId = this._wall.connect('notify::clock', () => this._sync());
         this._ifaceId = this._iface.connect('changed::clock-format', () => this._sync());
-        this.connect('destroy', () => {
-            this._wall.disconnect(this._wallId);
-            this._iface.disconnect(this._ifaceId);
-            this._wall = null;
-        });
+        this.connect('destroy', () => this._onDestroy());
         this._sync();
+    }
+
+    _onDestroy() {
+        if (this._wallId)
+            this._wall.disconnect(this._wallId);
+        this._wallId = 0;
+        if (this._ifaceId)
+            this._iface.disconnect(this._ifaceId);
+        this._ifaceId = 0;
+        this._wall = null;
+        this._iface = null;
     }
 
     _sync() {

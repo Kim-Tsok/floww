@@ -368,7 +368,13 @@ class FlowwMusicControlButton extends St.Button {
                 this._spring.velocity += 3; // a little pop on release
             this._ticker.wake();
         });
-        this.connect('destroy', () => this._ticker.destroy());
+        this.connect('destroy', () => this._onDestroy());
+    }
+
+    _onDestroy() {
+        this._ticker.destroy();
+        this._icon?.destroy();
+        this._icon = null;
     }
 
     setActive(on) {

@@ -111,6 +111,12 @@ class FlowwMusicInterlude extends St.BoxLayout {
             this.add_child(d);
             this.dots.push(d);
         }
+        this.connect('destroy', () => this._onDestroy());
+    }
+
+    _onDestroy() {
+        this.dots.forEach(dot => dot.destroy());
+        this.dots = [];
     }
 
     // p ∈ [0,1] through the gap; t = seconds for breathing.
